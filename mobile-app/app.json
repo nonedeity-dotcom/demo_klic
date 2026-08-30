@@ -7,6 +7,11 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#12151a",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "backgroundColor": "#12151a"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.yourcompany.noburnout",
@@ -16,7 +21,11 @@
     },
     "android": {
       "package": "com.yourcompany.noburnout",
-      "permissions": ["NOTIFICATIONS", "SCHEDULE_EXACT_ALARM"]
+      "permissions": ["NOTIFICATIONS", "SCHEDULE_EXACT_ALARM"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#12151a"
+      }
     },
     "plugins": [
       [

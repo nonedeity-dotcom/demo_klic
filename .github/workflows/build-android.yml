@@ -1,0 +1,62 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - claude/tracker-app-demo-8eowpg
+    paths:
+      - "mobile-app/**"
+      - ".github/workflows/build-android.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Expo prebuild (generate native android project)
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Build release APK
+        working-directory: mobile-app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: no-burnout-apk
+          path: mobile-app/${{ steps.apk.outputs.path }}
+
+      - name: Publish release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-build-${{ github.run_number }}
+          name: No Burnout APK build ${{ github.run_number }}
+          body: Automated debug-signed release APK built from ${{ github.sha }}.
+          files: mobile-app/${{ steps.apk.outputs.path }}
