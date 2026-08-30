@@ -1,0 +1,13 @@
+# Checks that the creker integration actually reaches the UI: app launches,
+# the "screentime" habit and its "Creker" tag render (i.e. no crash before
+# TodayScreen's sync effect runs), and takes a screenshot for a human/Claude
+# to visually confirm the checkbox itself is ticked — Maestro can assert
+# text is on screen but not a checkbox's fill color, so the screenshot is
+# still the source of truth for "did it actually auto-tick".
+appId: com.yourcompany.noburnout
+---
+- launchApp
+- assertVisible: "Сегодня выполнено"
+- assertVisible: "Экранное время в норме"
+- assertVisible: "Creker"
+- takeScreenshot: today

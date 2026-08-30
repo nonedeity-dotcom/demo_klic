@@ -67,7 +67,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Seed creker, install no-burnout, launch, screenshot
+      - name: Seed creker, install no-burnout, verify + screenshot via Maestro
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -91,10 +91,19 @@ jobs:
             cd ..
 
             adb install -r "${{ steps.nb_apk.outputs.path }}"
-            adb shell monkey -p com.yourcompany.noburnout -c android.intent.category.LAUNCHER 1
-            sleep 8
-            adb exec-out screencap -p > today-screenshot.png
+
+            curl -Ls "https://get.maestro.mobile.dev" | bash
+            export PATH="$PATH:$HOME/.maestro/bin"
+            maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml
+
             adb logcat -d > logcat.txt
+
+      - name: Locate Maestro screenshot
+        if: always()
+        run: |
+          SHOT=$(find "$HOME" . -maxdepth 4 -iname "today.png" 2>/dev/null | head -n 1)
+          echo "Found screenshot: $SHOT"
+          [ -n "$SHOT" ] && cp "$SHOT" ./today-screenshot.png || true
 
       - name: Upload results
         if: always()
