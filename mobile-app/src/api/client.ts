@@ -16,7 +16,10 @@ const KEYS = {
   milestones: "celebrated-milestones-v1",
   rewardOptions: "reward-options-v1",
   rewards: "rewards-log-v1",
+  screenTimeLimit: "screen-time-limit-minutes-v1",
 };
+
+export const DEFAULT_SCREEN_TIME_LIMIT_MIN = 180; // 3h/day, matches no particular study — just a sane starting point
 
 export const STREAK_MILESTONES = [7, 14, 30, 66];
 
@@ -50,6 +53,13 @@ const DEFAULT_HABITS: Habit[] = [
   { id: uid(), label: "Стакан воды сразу после пробуждения", sortOrder: 6 },
   { id: uid(), label: "Чай без сахара — без резких стимулов с утра", sortOrder: 7 },
   { id: uid(), label: "Без еды в первый час после пробуждения", sortOrder: 8 },
+  {
+    id: uid(),
+    label: "Экранное время в норме",
+    hint: "авто из Creker, если установлен — иначе отмечай сам",
+    sortOrder: 9,
+    auto: "screentime",
+  },
 ];
 
 const DEFAULT_REWARD_OPTIONS: RewardOption[] = [
@@ -228,5 +238,12 @@ export const api = {
     const reward: Reward = { id: uid(), date, text };
     await write(KEYS.rewards, [...rewards, reward]);
     return reward;
+  },
+
+  async getScreenTimeLimitMinutes(): Promise<number> {
+    return read(KEYS.screenTimeLimit, DEFAULT_SCREEN_TIME_LIMIT_MIN);
+  },
+  async setScreenTimeLimitMinutes(minutes: number): Promise<void> {
+    await write(KEYS.screenTimeLimit, minutes);
   },
 };

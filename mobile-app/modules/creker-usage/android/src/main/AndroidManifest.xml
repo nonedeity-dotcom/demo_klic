@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="expo.modules.crekerusage">
+
+  <!--
+    Held so this app can query creker's device_usage ContentProvider. Granted
+    automatically at install (creker declares it protectionLevel="normal") — no
+    runtime dialog needed, but the exact name has to be known to ask for it.
+  -->
+  <uses-permission android:name="com.creker.screentime.permission.READ_USAGE" />
+
+</manifest>

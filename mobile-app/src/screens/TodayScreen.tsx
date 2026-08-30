@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { colors } from "../theme/colors";
+import { syncScreenTimeHabit } from "../integrations/screenTime";
 import type { Habit, HabitLog } from "../types";
 
 function todayKey() {
@@ -29,6 +30,14 @@ export default function TodayScreen() {
   });
 
   const invalidateHabits = () => qc.invalidateQueries({ queryKey: ["habits"] });
+
+  useEffect(() => {
+    if (habits.length === 0) return;
+    syncScreenTimeHabit(habits, today).then((synced) => {
+      if (synced) qc.invalidateQueries({ queryKey: ["habitLog", today] });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [habits.length, today]);
 
   const toggle = useMutation({
     mutationFn: ({ habitId, done }: { habitId: string; done: boolean }) =>
@@ -128,7 +137,15 @@ export default function TodayScreen() {
             >
               <View style={[styles.checkbox, checked && styles.checkboxChecked]} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.label}>{h.label}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={styles.label}>{h.label}</Text>
+                  {h.auto === "screentime" && (
+                    <View style={styles.autoTag}>
+                      <Feather name="smartphone" size={9} color={colors.textMuted} />
+                      <Text style={styles.autoTagText}>Creker</Text>
+                    </View>
+                  )}
+                </View>
                 {!!h.hint && <Text style={styles.hint}>{h.hint}</Text>}
               </View>
             </Pressable>
@@ -199,6 +216,16 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: colors.accentGreen, borderWidth: 0 },
   label: { color: colors.text, fontSize: 15, fontWeight: "500" },
   hint: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  autoTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: colors.bg,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  autoTagText: { color: colors.textMuted, fontSize: 9, fontWeight: "600" },
   iconBtn: { padding: 6 },
   editInput: { flex: 1, color: colors.text, fontSize: 15, paddingVertical: 2 },
   addRow: {

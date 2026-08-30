@@ -28,5 +28,12 @@
     "react-native-web": "~0.19.10",
     "typescript": "^5.6.2"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "autolinking": {
+      "searchPaths": [
+        "./modules"
+      ]
+    }
+  }
 }

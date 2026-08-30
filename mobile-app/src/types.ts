@@ -3,6 +3,10 @@ export interface Habit {
   label: string;
   hint?: string | null;
   sortOrder: number;
+  /** When set, this habit's done-state for today is managed automatically
+   *  instead of by tapping — currently only "screentime" (from creker), see
+   *  src/integrations/screenTime.ts. */
+  auto?: "screentime" | null;
 }
 
 export interface HabitLog {
