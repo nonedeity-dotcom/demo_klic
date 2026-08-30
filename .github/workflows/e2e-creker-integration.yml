@@ -8,28 +8,25 @@ name: E2E check — creker integration
 # actually crosses from creker's ContentProvider into no-burnout's native
 # module — a build succeeding proves the code compiles, not that the two
 # apps can actually talk to each other on a device.
+#
+# Two separate jobs, not one: building no-burnout's APK (RN/Compose gradle
+# cache) and running the emulator (Android SDK + a several-GB system image)
+# together ran the single runner out of disk mid-emulator-setup ("No space
+# left on device") — confirmed by log, not a guess. Splitting them gives
+# each its own fresh runner with the full ~14GB free, connected by an
+# artifact upload/download instead of sharing one disk.
 
 on:
   workflow_dispatch: {}
 
 jobs:
-  e2e:
+  build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
-      - name: Checkout no-burnout (this repo)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           path: no-burnout
-
-      # creker is a public repo on the same account, so this needs no token —
-      # a plain checkout works exactly like it would for any public repo.
-      - name: Checkout creker
-        uses: actions/checkout@v4
-        with:
-          repository: nonedeity-dotcom/creker
-          ref: claude/screentime-content-provider
-          path: creker
 
       - uses: actions/setup-node@v4
         with:
@@ -75,7 +72,39 @@ jobs:
         run: |
           APK=$(find no-burnout/mobile-app/android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
           echo "Found $APK"
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          cp "$APK" ./app-release.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: no-burnout-apk
+          path: app-release.apk
+          retention-days: 1
+
+  e2e:
+    needs: build-apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: no-burnout
+
+      # creker is a public repo on the same account, so this needs no token —
+      # a plain checkout works exactly like it would for any public repo.
+      - uses: actions/checkout@v4
+        with:
+          repository: nonedeity-dotcom/creker
+          ref: claude/screentime-content-provider
+          path: creker
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: no-burnout-apk
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - name: Enable KVM for the emulator
         run: |
@@ -106,7 +135,7 @@ jobs:
               --no-daemon
             cd ..
 
-            adb install -r "${{ steps.nb_apk.outputs.path }}"
+            adb install -r ./app-release.apk
 
             curl -Ls "https://get.maestro.mobile.dev" | bash
             export PATH="$PATH:$HOME/.maestro/bin"
