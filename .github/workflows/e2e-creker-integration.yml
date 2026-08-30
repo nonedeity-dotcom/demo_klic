@@ -141,8 +141,14 @@ jobs:
       - name: Locate Maestro screenshot
         if: always()
         run: |
-          SHOT=$(find "$HOME" . -maxdepth 4 -iname "today.png" 2>/dev/null | head -n 1)
+          # Confirmed by log: Maestro logged "Take screenshot today... COMPLETED"
+          # yet this search still came up empty at maxdepth 4 — it saves under
+          # ~/.maestro/tests/<run-timestamp>/ (nested deeper than 4, unlike the
+          # top-level debug dir Maestro prints on a failed assertion), so this
+          # widens the search instead of guessing a fixed depth.
+          SHOT=$(find "$HOME" . -iname "today.png" 2>/dev/null | head -n 1)
           echo "Found screenshot: $SHOT"
+          find "$HOME/.maestro" -iname "*.png" 2>/dev/null || true
           [ -n "$SHOT" ] && cp "$SHOT" ./today-screenshot.png || true
 
       - name: Upload results
