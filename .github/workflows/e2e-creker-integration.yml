@@ -170,19 +170,16 @@ jobs:
       # (api.github.com, which this session can reach directly) — force-push
       # so the branch holds just the latest run's screenshot, not a growing
       # history of images.
-      - name: Publish screenshot to e2e-results branch for review
+      - name: Publish screenshot + logcat to e2e-results branch for review
         if: always()
         working-directory: no-burnout
         run: |
-          if [ -f ../today-screenshot.png ]; then
-            git config user.email "actions@github.com"
-            git config user.name "github-actions[bot]"
-            git checkout --orphan e2e-results
-            git rm -rf . >/dev/null 2>&1 || true
-            cp ../today-screenshot.png today-screenshot.png
-            git add today-screenshot.png
-            git commit -m "e2e: screenshot from run ${{ github.run_id }}"
-            git push -f origin e2e-results
-          else
-            echo "No screenshot to publish"
-          fi
+          git config user.email "actions@github.com"
+          git config user.name "github-actions[bot]"
+          git checkout --orphan e2e-results
+          git rm -rf . >/dev/null 2>&1 || true
+          [ -f ../today-screenshot.png ] && cp ../today-screenshot.png today-screenshot.png
+          [ -f ../logcat.txt ] && cp ../logcat.txt logcat.txt
+          git add -A
+          git commit -m "e2e: results from run ${{ github.run_id }}"
+          git push -f origin e2e-results
