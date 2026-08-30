@@ -58,9 +58,9 @@ export async function setReminderSettings(settings: ReminderSettings): Promise<v
       body: "Загляни в чек-лист привычек — ещё есть время сегодня.",
     },
     trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
       hour: settings.hour,
       minute: settings.minute,
+      repeats: true,
     },
   });
   await AsyncStorage.setItem(NOTIFICATION_ID_KEY, id);

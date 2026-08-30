@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api/client";
+import { api, STREAK_MILESTONES } from "../api/client";
 import { colors } from "../theme/colors";
 import TwoCurves from "../components/TwoCurves";
 import type { Habit, HabitLog, FocusSession } from "../types";
@@ -15,31 +16,50 @@ const weekDayLabels = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 export default function ReportScreen() {
   const today = dateNDaysAgo(0);
   const weekStart = dateNDaysAgo(6);
+  const streakWindowStart = dateNDaysAgo(120); // long enough to reach the 66-day milestone
 
   const { data: habits = [] } = useQuery<Habit[]>({ queryKey: ["habits"], queryFn: () => api.getHabits() as Promise<Habit[]> });
   const { data: logs = [] } = useQuery<HabitLog[]>({
     queryKey: ["habitLog", "week"],
     queryFn: () => api.getHabitLog(weekStart, today) as Promise<HabitLog[]>,
   });
+  const { data: streakLogs = [] } = useQuery<HabitLog[]>({
+    queryKey: ["habitLog", "streak"],
+    queryFn: () => api.getHabitLog(streakWindowStart, today) as Promise<HabitLog[]>,
+  });
   const { data: sessions = [] } = useQuery<FocusSession[]>({
     queryKey: ["sessions", "week"],
     queryFn: () => api.getSessions(weekStart, today) as Promise<FocusSession[]>,
   });
+  const { data: celebrated = [] } = useQuery<number[]>({
+    queryKey: ["milestones"],
+    queryFn: () => api.getCelebratedMilestones(),
+  });
 
-  // Streak: reuse the same "half the habits done" rule as the original demo,
-  // just computed from server data instead of a local log object.
+  // Streak: a day "counts" once at least half the habits are done that day —
+  // same rule as the original demo.
   const days = Array.from({ length: 7 }, (_, i) => dateNDaysAgo(6 - i));
   const doneByDay = (day: string) => logs.filter((l) => l.date.startsWith(day) && l.done).length;
   const sessionsByDay = (day: string) => sessions.filter((s) => s.date.startsWith(day)).length;
 
   let streak = 0;
-  for (let i = 0; i < 400; i++) {
+  for (let i = 0; i < 120; i++) {
     const day = dateNDaysAgo(i);
-    const done = logs.filter((l) => l.date.startsWith(day) && l.done).length;
+    const done = streakLogs.filter((l) => l.date.startsWith(day) && l.done).length;
     if (done >= Math.ceil(habits.length / 2)) streak++;
     else if (i === 0) continue;
     else break;
   }
+
+  const nextMilestone = STREAK_MILESTONES.find((m) => m > streak);
+  const [justCelebrated, setJustCelebrated] = useState<number | null>(null);
+
+  useEffect(() => {
+    const hit = STREAK_MILESTONES.find((m) => m === streak);
+    if (hit && !celebrated.includes(hit)) {
+      api.celebrateMilestone(hit).then(() => setJustCelebrated(hit));
+    }
+  }, [streak, celebrated]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
@@ -49,6 +69,32 @@ export default function ReportScreen() {
           каждый выполненный день — ещё один шаг к плавной, устойчивой кривой
         </Text>
       </View>
+
+      {justCelebrated && (
+        <View style={styles.celebration}>
+          <Text style={styles.celebrationEmoji}>🔥</Text>
+          <Text style={styles.celebrationText}>
+            {justCelebrated} дней подряд! По видео это{" "}
+            {justCelebrated >= 66 ? "автопилот — привычка закрепилась" : "важная веха на пути к автопилоту"}.
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.milestoneRow}>
+        {STREAK_MILESTONES.map((m) => (
+          <View key={m} style={styles.milestoneItem}>
+            <View style={[styles.milestoneDot, streak >= m && styles.milestoneDotDone]}>
+              {streak >= m && <Text style={styles.milestoneCheck}>✓</Text>}
+            </View>
+            <Text style={styles.milestoneLabel}>{m}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={[styles.subtle, { marginBottom: 20 }]}>
+        {nextMilestone
+          ? `${streak} из ${nextMilestone} дней до следующей вехи`
+          : "Все вехи пройдены — привычка на автопилоте"}
+      </Text>
 
       <Text style={styles.subtle}>Последние 7 дней</Text>
       <View style={styles.statsRow}>
@@ -108,6 +154,31 @@ const styles = StyleSheet.create({
   hero: { alignItems: "center", marginBottom: 28, paddingVertical: 8 },
   heroCaption: { color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 14, maxWidth: 220 },
   subtle: { color: colors.textMuted, fontSize: 13, marginBottom: 16 },
+  celebration: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(224,138,85,0.14)",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+  },
+  celebrationEmoji: { fontSize: 24 },
+  celebrationText: { color: colors.text, fontSize: 12, flex: 1, lineHeight: 17 },
+  milestoneRow: { flexDirection: "row", gap: 18, marginBottom: 8 },
+  milestoneItem: { alignItems: "center", gap: 4 },
+  milestoneDot: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: "#4a5058",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  milestoneDotDone: { backgroundColor: colors.accentGreen, borderWidth: 0 },
+  milestoneCheck: { color: colors.bg, fontSize: 12, fontWeight: "700" },
+  milestoneLabel: { color: colors.textMuted, fontSize: 10 },
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
   statCard: { flex: 1, backgroundColor: colors.card, borderRadius: 16, padding: 14 },
   statValue: { fontSize: 30, fontWeight: "700", letterSpacing: -0.5 },

@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { Habit, HabitLog, Trigger, EnergyLog, FocusSession, DailyQuestion } from "../types";
+import type { Habit, HabitLog, Trigger, EnergyLog, FocusSession, DailyQuestion, RewardOption, Reward } from "../types";
 
 // Local-only storage: no account, no server. Everything lives in
 // AsyncStorage on this device — same idea as the original demo's
@@ -13,7 +13,12 @@ const KEYS = {
   energy: "energy-log-v1",
   sessions: "timer-stats-v1",
   question: "daily-question-v1",
+  milestones: "celebrated-milestones-v1",
+  rewardOptions: "reward-options-v1",
+  rewards: "rewards-log-v1",
 };
+
+export const STREAK_MILESTONES = [7, 14, 30, 66];
 
 async function read<T>(key: string, fallback: T): Promise<T> {
   const raw = await AsyncStorage.getItem(key);
@@ -42,6 +47,17 @@ const DEFAULT_HABITS: Habit[] = [
   { id: uid(), label: "Чёткий дедлайн перед стартом задачи", sortOrder: 3 },
   { id: uid(), label: "10 минут без телефона после блока работы", hint: "50 минут работа / 10 минут отдых", sortOrder: 4 },
   { id: uid(), label: "Час без телефона с утра", sortOrder: 5 },
+  { id: uid(), label: "Стакан воды сразу после пробуждения", sortOrder: 6 },
+  { id: uid(), label: "Чай без сахара — без резких стимулов с утра", sortOrder: 7 },
+  { id: uid(), label: "Без еды в первый час после пробуждения", sortOrder: 8 },
+];
+
+const DEFAULT_REWARD_OPTIONS: RewardOption[] = [
+  { id: uid(), label: "Прогулка" },
+  { id: uid(), label: "Чай" },
+  { id: uid(), label: "Медитация" },
+  { id: uid(), label: "Спорт" },
+  { id: uid(), label: "Холодный душ" },
 ];
 
 const DEFAULT_TRIGGERS: Trigger[] = [
@@ -56,6 +72,7 @@ const DEFAULT_TRIGGERS: Trigger[] = [
 async function ensureSeeded() {
   if ((await AsyncStorage.getItem(KEYS.habits)) === null) await write(KEYS.habits, DEFAULT_HABITS);
   if ((await AsyncStorage.getItem(KEYS.triggers)) === null) await write(KEYS.triggers, DEFAULT_TRIGGERS);
+  if ((await AsyncStorage.getItem(KEYS.rewardOptions)) === null) await write(KEYS.rewardOptions, DEFAULT_REWARD_OPTIONS);
 }
 
 export const api = {
@@ -165,5 +182,51 @@ export const api = {
     const entry: DailyQuestion = { date, text };
     await write(KEYS.question, existing ? questions.map((q) => (q === existing ? entry : q)) : [...questions, entry]);
     return entry;
+  },
+
+  async getCelebratedMilestones(): Promise<number[]> {
+    return read(KEYS.milestones, []);
+  },
+  async celebrateMilestone(milestone: number): Promise<void> {
+    const done = await read<number[]>(KEYS.milestones, []);
+    if (!done.includes(milestone)) await write(KEYS.milestones, [...done, milestone]);
+  },
+
+  async getRewardOptions(): Promise<RewardOption[]> {
+    await ensureSeeded();
+    return read(KEYS.rewardOptions, []);
+  },
+  async addRewardOption(label: string): Promise<RewardOption> {
+    const options = await read<RewardOption[]>(KEYS.rewardOptions, []);
+    const option: RewardOption = { id: uid(), label };
+    await write(KEYS.rewardOptions, [...options, option]);
+    return option;
+  },
+  async updateRewardOption(id: string, label: string): Promise<{ ok: true }> {
+    const options = await read<RewardOption[]>(KEYS.rewardOptions, []);
+    await write(
+      KEYS.rewardOptions,
+      options.map((o) => (o.id === id ? { ...o, label } : o)),
+    );
+    return { ok: true };
+  },
+  async removeRewardOption(id: string): Promise<{ ok: true }> {
+    const options = await read<RewardOption[]>(KEYS.rewardOptions, []);
+    await write(
+      KEYS.rewardOptions,
+      options.filter((o) => o.id !== id),
+    );
+    return { ok: true };
+  },
+
+  async getRewards(from: string, to: string): Promise<Reward[]> {
+    const rewards = await read<Reward[]>(KEYS.rewards, []);
+    return rewards.filter((r) => inRange(r.date, from, to));
+  },
+  async addReward(date: string, text: string): Promise<Reward> {
+    const rewards = await read<Reward[]>(KEYS.rewards, []);
+    const reward: Reward = { id: uid(), date, text };
+    await write(KEYS.rewards, [...rewards, reward]);
+    return reward;
   },
 };

@@ -35,3 +35,14 @@ export interface DailyQuestion {
   date: string;
   text: string;
 }
+
+export interface RewardOption {
+  id: string;
+  label: string;
+}
+
+export interface Reward {
+  id: string;
+  date: string;
+  text: string;
+}

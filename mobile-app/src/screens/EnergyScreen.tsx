@@ -28,12 +28,36 @@ export default function EnergyScreen() {
 
   const valueFor = (hour: number) => logs.find((l) => l.hour === hour)?.value || 0;
 
+  const set = logs.filter((l) => l.value > 0);
+  const peakHour = set.length ? set.reduce((a, b) => (b.value > a.value ? b : a)).hour : null;
+  const dipHour = set.length ? set.reduce((a, b) => (b.value < a.value ? b : a)).hour : null;
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
       <Text style={styles.subtle}>Отметь уровень энергии по часам</Text>
       <Text style={[styles.subtle, { marginBottom: 20 }]}>
         так видно пики (сложные задачи) и спады (рутина)
       </Text>
+
+      <View style={styles.hintCard}>
+        {set.length >= 2 ? (
+          <>
+            <Text style={styles.hintText}>
+              <Text style={{ color: colors.accentGreen, fontWeight: "700" }}>Пик в {peakHour}:00</Text> — ставь сюда
+              сложные аналитические задачи.
+            </Text>
+            <Text style={[styles.hintText, { marginTop: 4 }]}>
+              <Text style={{ color: colors.accent, fontWeight: "700" }}>Спад в {dipHour}:00</Text> — подходит для
+              рутины.
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.hintText}>
+            Отмечай энергию 3-5 дней подряд, чтобы увидеть свои реальные пики и спады.
+          </Text>
+        )}
+      </View>
+
       <View style={styles.grid}>
         {HOURS.map((h) => {
           const v = valueFor(h);
@@ -62,6 +86,8 @@ export default function EnergyScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   subtle: { color: colors.textMuted, fontSize: 13 },
+  hintCard: { backgroundColor: colors.card, borderRadius: 16, padding: 14, marginBottom: 20 },
+  hintText: { color: colors.text, fontSize: 12, lineHeight: 17 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   hourBlock: { width: "22%", alignItems: "center", gap: 6 },
   hourLabel: { color: colors.textMuted, fontSize: 10 },
