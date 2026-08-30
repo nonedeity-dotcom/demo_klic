@@ -121,26 +121,19 @@ jobs:
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # Confirmed by log: this action runs each line of `script` as its own
+          # independent `sh -c` invocation, not as one cohesive script — a `cd`
+          # or `export` on one line has no effect on the next line ("chmod:
+          # cannot access 'gradlew'" even though the previous line was `cd
+          # creker`). So every line here is self-contained: no bare `cd`, no
+          # `export` relied on by a later line, no `\` continuation across
+          # lines — dependent steps are chained with `&&` inside one line.
           script: |
-            set -e
-
-            # Installs creker's debug app + its instrumentation test APK, runs
-            # just SeedTestDataTest (inserts one device_usage row, then
-            # self-checks it reads back through the real ContentProvider URI —
-            # fails right here if that part is broken).
-            cd creker
-            chmod +x gradlew
-            ./gradlew connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=com.creker.screentime.SeedTestDataTest \
-              --no-daemon
-            cd ..
-
+            chmod +x creker/gradlew
+            (cd creker && ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.creker.screentime.SeedTestDataTest --no-daemon)
             adb install -r ./app-release.apk
-
             curl -Ls "https://get.maestro.mobile.dev" | bash
-            export PATH="$PATH:$HOME/.maestro/bin"
-            maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml
-
+            (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml)
             adb logcat -d > logcat.txt
 
       - name: Locate Maestro screenshot
