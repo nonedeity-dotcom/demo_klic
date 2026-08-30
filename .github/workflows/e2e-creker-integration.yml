@@ -60,7 +60,7 @@ jobs:
           # anyway) — the filesystem outcome is checked, not $?, since the
           # exit code can't be trusted.
           EXPO_OFFLINE=1 CI=1 npx expo prebuild --platform android \
-            --template "$GITHUB_WORKSPACE/.github/e2e-assets/expo-template-bare-minimum-51.0.56.tgz"
+            --template "$GITHUB_WORKSPACE/no-burnout/.github/e2e-assets/expo-template-bare-minimum-51.0.56.tgz"
           if [ ! -f android/settings.gradle ]; then
             echo "prebuild failed even with the cached template — see log above"
             exit 1
