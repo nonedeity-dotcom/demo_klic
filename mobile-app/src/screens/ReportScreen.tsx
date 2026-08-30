@@ -2,6 +2,7 @@ import { View, Text, ScrollView, StyleSheet } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { colors } from "../theme/colors";
+import TwoCurves from "../components/TwoCurves";
 import type { Habit, HabitLog, FocusSession } from "../types";
 
 function dateNDaysAgo(n: number) {
@@ -42,14 +43,21 @@ export default function ReportScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
+      <View style={styles.hero}>
+        <TwoCurves />
+        <Text style={styles.heroCaption}>
+          каждый выполненный день — ещё один шаг к плавной, устойчивой кривой
+        </Text>
+      </View>
+
       <Text style={styles.subtle}>Последние 7 дней</Text>
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: colors.accent }]}>{streak}</Text>
+          <Text style={[styles.statValue, { color: colors.accentGreen }]}>{streak}</Text>
           <Text style={styles.statLabel}>дней подряд</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: colors.accentGreen }]}>
+          <Text style={[styles.statValue, { color: colors.blue }]}>
             {sessions.reduce((a, s) => a + 1, 0)}
           </Text>
           <Text style={styles.statLabel}>фокус-сессий</Text>
@@ -97,10 +105,12 @@ export default function ReportScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  hero: { alignItems: "center", marginBottom: 28, paddingVertical: 8 },
+  heroCaption: { color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 14, maxWidth: 220 },
   subtle: { color: colors.textMuted, fontSize: 13, marginBottom: 16 },
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
   statCard: { flex: 1, backgroundColor: colors.card, borderRadius: 16, padding: 14 },
-  statValue: { fontSize: 22, fontWeight: "700" },
+  statValue: { fontSize: 30, fontWeight: "700", letterSpacing: -0.5 },
   statLabel: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
   sectionLabel: { color: colors.textMuted, fontSize: 12, marginBottom: 8, marginTop: 8 },
   barRow: { flexDirection: "row", gap: 8, height: 70, marginBottom: 24, alignItems: "flex-end" },

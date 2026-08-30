@@ -115,6 +115,22 @@ export const api = {
     );
     return { ok: true };
   },
+  async updateTrigger(id: string, label: string): Promise<{ ok: true }> {
+    const triggers = await read<Trigger[]>(KEYS.triggers, []);
+    await write(
+      KEYS.triggers,
+      triggers.map((t) => (t.id === id ? { ...t, label } : t)),
+    );
+    return { ok: true };
+  },
+  async removeTrigger(id: string): Promise<{ ok: true }> {
+    const triggers = await read<Trigger[]>(KEYS.triggers, []);
+    await write(
+      KEYS.triggers,
+      triggers.filter((t) => t.id !== id),
+    );
+    return { ok: true };
+  },
 
   async getEnergy(from: string, to: string): Promise<EnergyLog[]> {
     const logs = await read<EnergyLog[]>(KEYS.energy, []);

@@ -1,4 +1,6 @@
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { useState } from "react";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { colors } from "../theme/colors";
@@ -11,6 +13,10 @@ function todayKey() {
 export default function TodayScreen() {
   const qc = useQueryClient();
   const today = todayKey();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [adding, setAdding] = useState(false);
 
   const { data: habits = [] } = useQuery<Habit[]>({
     queryKey: ["habits"],
@@ -21,6 +27,8 @@ export default function TodayScreen() {
     queryKey: ["habitLog", today],
     queryFn: () => api.getHabitLog(today, today) as Promise<HabitLog[]>,
   });
+
+  const invalidateHabits = () => qc.invalidateQueries({ queryKey: ["habits"] });
 
   const toggle = useMutation({
     mutationFn: ({ habitId, done }: { habitId: string; done: boolean }) =>
@@ -42,6 +50,43 @@ export default function TodayScreen() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["habitLog", today] }),
   });
 
+  const addHabit = useMutation({
+    mutationFn: (label: string) => api.addHabit(label),
+    onSuccess: () => {
+      setNewLabel("");
+      setAdding(false);
+      invalidateHabits();
+    },
+  });
+
+  const updateHabit = useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) => api.updateHabit(id, { label }),
+    onSuccess: () => {
+      setEditingId(null);
+      invalidateHabits();
+    },
+  });
+
+  const removeHabit = useMutation({
+    mutationFn: (id: string) => api.removeHabit(id),
+    onSuccess: invalidateHabits,
+  });
+
+  const startEdit = (h: Habit) => {
+    setEditingId(h.id);
+    setEditDraft(h.label);
+  };
+
+  const saveEdit = () => {
+    if (editingId && editDraft.trim()) updateHabit.mutate({ id: editingId, label: editDraft.trim() });
+    else setEditingId(null);
+  };
+
+  const submitNew = () => {
+    if (newLabel.trim()) addHabit.mutate(newLabel.trim());
+    else setAdding(false);
+  };
+
   const doneCount = logs.filter((l) => l.done).length;
 
   return (
@@ -52,20 +97,75 @@ export default function TodayScreen() {
       <View style={{ height: 16 }} />
       {habits.map((h) => {
         const checked = !!logs.find((l) => l.habitId === h.id)?.done;
-        return (
-          <Pressable
-            key={h.id}
-            onPress={() => toggle.mutate({ habitId: h.id, done: !checked })}
-            style={[styles.card, checked && styles.cardChecked]}
-          >
-            <View style={[styles.checkbox, checked && styles.checkboxChecked]} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>{h.label}</Text>
-              {!!h.hint && <Text style={styles.hint}>{h.hint}</Text>}
+        const isEditing = editingId === h.id;
+
+        if (isEditing) {
+          return (
+            <View key={h.id} style={[styles.card, styles.cardEditing]}>
+              <TextInput
+                value={editDraft}
+                onChangeText={setEditDraft}
+                autoFocus
+                style={styles.editInput}
+                placeholderTextColor={colors.textMuted}
+                onSubmitEditing={saveEdit}
+              />
+              <Pressable onPress={saveEdit} style={styles.iconBtn}>
+                <Feather name="check" size={16} color={colors.accentGreen} />
+              </Pressable>
+              <Pressable onPress={() => setEditingId(null)} style={styles.iconBtn}>
+                <Feather name="x" size={16} color={colors.textMuted} />
+              </Pressable>
             </View>
-          </Pressable>
+          );
+        }
+
+        return (
+          <View key={h.id} style={[styles.card, checked && styles.cardChecked]}>
+            <Pressable
+              onPress={() => toggle.mutate({ habitId: h.id, done: !checked })}
+              style={styles.cardMain}
+            >
+              <View style={[styles.checkbox, checked && styles.checkboxChecked]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>{h.label}</Text>
+                {!!h.hint && <Text style={styles.hint}>{h.hint}</Text>}
+              </View>
+            </Pressable>
+            <Pressable onPress={() => startEdit(h)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${h.label}`}>
+              <Feather name="edit-2" size={14} color={colors.textMuted} />
+            </Pressable>
+            <Pressable onPress={() => removeHabit.mutate(h.id)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${h.label}`}>
+              <Feather name="trash-2" size={14} color={colors.textMuted} />
+            </Pressable>
+          </View>
         );
       })}
+
+      {adding ? (
+        <View style={[styles.card, styles.cardEditing]}>
+          <TextInput
+            value={newLabel}
+            onChangeText={setNewLabel}
+            autoFocus
+            placeholder="Новая привычка…"
+            placeholderTextColor={colors.textMuted}
+            style={styles.editInput}
+            onSubmitEditing={submitNew}
+          />
+          <Pressable onPress={submitNew} style={styles.iconBtn}>
+            <Feather name="check" size={16} color={colors.accentGreen} />
+          </Pressable>
+          <Pressable onPress={() => setAdding(false)} style={styles.iconBtn}>
+            <Feather name="x" size={16} color={colors.textMuted} />
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable onPress={() => setAdding(true)} style={styles.addRow}>
+          <Feather name="plus" size={16} color={colors.textMuted} />
+          <Text style={styles.addRowText}>Добавить привычку</Text>
+        </Pressable>
+      )}
     </ScrollView>
   );
 }
@@ -75,8 +175,8 @@ const styles = StyleSheet.create({
   subtle: { color: colors.textMuted, fontSize: 13 },
   card: {
     flexDirection: "row",
-    gap: 12,
-    alignItems: "flex-start",
+    gap: 8,
+    alignItems: "center",
     backgroundColor: colors.card,
     borderRadius: 16,
     paddingHorizontal: 16,
@@ -85,7 +185,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "transparent",
   },
+  cardMain: { flexDirection: "row", gap: 12, alignItems: "flex-start", flex: 1 },
   cardChecked: { backgroundColor: "rgba(143,184,154,0.12)", borderColor: colors.accentGreenDark },
+  cardEditing: { borderColor: colors.accent },
   checkbox: {
     width: 20,
     height: 20,
@@ -97,4 +199,18 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: colors.accentGreen, borderWidth: 0 },
   label: { color: colors.text, fontSize: 15, fontWeight: "500" },
   hint: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  iconBtn: { padding: 6 },
+  editInput: { flex: 1, color: colors.text, fontSize: 15, paddingVertical: 2 },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderStyle: "dashed",
+  },
+  addRowText: { color: colors.textMuted, fontSize: 14 },
 });
