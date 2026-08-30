@@ -44,7 +44,12 @@ jobs:
         working-directory: no-burnout/mobile-app
         run: |
           npm install
-          EXPO_OFFLINE=1 CI=1 npx expo prebuild --platform android
+          for i in 1 2 3; do
+            EXPO_OFFLINE=1 CI=1 npx expo prebuild --platform android && break
+            echo "prebuild attempt $i failed (likely a registry.npmjs.org timeout fetching the bare-minimum template) — retrying in 15s"
+            rm -rf android
+            sleep 15
+          done
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
