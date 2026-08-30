@@ -3,11 +3,21 @@
 # TodayScreen's sync effect runs), and takes a screenshot for a human/Claude
 # to visually confirm the checkbox itself is ticked — Maestro can assert
 # text is on screen but not a checkbox's fill color, so the screenshot is
-# still the source of truth for "did it actually auto-tick".
+# still the source of visible confirmation for "did it actually auto-tick".
+#
+# The screentime habit is seeded last (10th of 10 default habits), below the
+# fold on the emulator's 320x640 viewport — confirmed by log: the header
+# assertion passed instantly, but the habit label failed even though the
+# screen had rendered correctly. scrollUntilVisible finds it by scrolling
+# the list instead of assuming it starts on-screen.
 appId: com.yourcompany.noburnout
 ---
 - launchApp
 - assertVisible: "Сегодня выполнено \\d+ из \\d+"
+- scrollUntilVisible:
+    element:
+      text: "Экранное время в норме"
+    direction: DOWN
 - assertVisible: "Экранное время в норме"
 - assertVisible: "Creker"
 - takeScreenshot: today
