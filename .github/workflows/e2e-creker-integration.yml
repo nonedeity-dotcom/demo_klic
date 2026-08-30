@@ -42,36 +42,27 @@ jobs:
 
       - name: Build no-burnout release APK
         working-directory: no-burnout/mobile-app
-        env:
-          # The prebuild failures so far are near-instant (~0.5s), not a slow
-          # timeout — more consistent with a flaky IPv6 route to the registry
-          # CDN than an actually slow/overloaded server. Forcing IPv4 first
-          # costs nothing if that's not the cause.
-          NODE_OPTIONS: --dns-result-order=ipv4first
         run: |
           npm install
 
-          success=false
-          for i in 1 2 3; do
-            echo "=== prebuild attempt $i: starting ==="
-            rm -rf android ios
-            set +e
-            EXPO_OFFLINE=1 CI=1 npx expo prebuild --platform android
-            set -e
-            # expo prebuild exits 0 even when it fails to create the native
-            # directory (confirmed: "✖ Failed to create the native directory"
-            # printed, then exit status 0) — the exit code lies, so check the
-            # filesystem outcome it actually promises instead of trusting $?.
-            if [ -f android/settings.gradle ]; then
-              echo "=== prebuild attempt $i: succeeded (android/settings.gradle exists) ==="
-              success=true
-              break
-            fi
-            echo "=== prebuild attempt $i: android/ wasn't created — sleeping 20s before retry ==="
-            sleep 20
-          done
-          if [ "$success" != true ]; then
-            echo "All 3 prebuild attempts failed — giving up"
+          # `expo prebuild` fetches the bare-minimum template from the npm
+          # registry's CDN — confirmed (via 3 genuine retries, 20s apart,
+          # each an independent DNS+connection attempt) to fail 100% of the
+          # time from this specific runner pool with an instant "network
+          # timeout", while the very same file downloads fine from this
+          # session directly. Not a flake to retry around, so instead: use
+          # the exact tarball --template accepts a local file for, fetched
+          # once outside CI and committed to .github/e2e-assets/. Bypasses
+          # that network path entirely rather than working around it.
+          #
+          # expo prebuild also exits 0 even when it fails (confirmed: prints
+          # "✖ Failed to create the native directory" then returns success
+          # anyway) — the filesystem outcome is checked, not $?, since the
+          # exit code can't be trusted.
+          EXPO_OFFLINE=1 CI=1 npx expo prebuild --platform android \
+            --template "$GITHUB_WORKSPACE/.github/e2e-assets/expo-template-bare-minimum-51.0.56.tgz"
+          if [ ! -f android/settings.gradle ]; then
+            echo "prebuild failed even with the cached template — see log above"
             exit 1
           fi
 
