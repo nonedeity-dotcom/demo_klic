@@ -14,10 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.yourcompany.noburnout",
-      "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
-      }
+      "bundleIdentifier": "com.yourcompany.noburnout"
     },
     "android": {
       "package": "com.yourcompany.noburnout",
@@ -35,9 +32,6 @@
           "color": "#e08a55"
         }
       ]
-    ],
-    "extra": {
-      "apiUrl": "https://your-backend.example.com"
-    }
+    ]
   }
 }

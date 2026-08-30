@@ -8,6 +8,7 @@ import EnergyScreen from "../screens/EnergyScreen";
 import TriggersScreen from "../screens/TriggersScreen";
 import QuestionScreen from "../screens/QuestionScreen";
 import ReportScreen from "../screens/ReportScreen";
+import ReminderScreen from "../screens/ReminderScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -35,6 +36,7 @@ export default function RootTabs() {
         <Tab.Screen name="Триггеры" component={TriggersScreen} />
         <Tab.Screen name="Вопрос" component={QuestionScreen} />
         <Tab.Screen name="Отчёт" component={ReportScreen} />
+        <Tab.Screen name="Напоминание" component={ReminderScreen} />
       </Tab.Navigator>
     </NavigationContainer>
   );
