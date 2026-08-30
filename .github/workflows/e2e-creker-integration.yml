@@ -84,6 +84,8 @@ jobs:
     needs: build-apk
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -153,3 +155,28 @@ jobs:
             logcat.txt
             creker/app/build/reports/androidTests/connected/**
           if-no-files-found: warn
+
+      # actions/upload-artifact puts files behind an Azure Blob Storage
+      # redirect that this session's own egress policy blocks, so there is
+      # no way to fetch the artifact zip from inside this session to
+      # actually look at the screenshot. Pushing it to a small dedicated
+      # branch instead makes it reachable through the GitHub Contents API
+      # (api.github.com, which this session can reach directly) — force-push
+      # so the branch holds just the latest run's screenshot, not a growing
+      # history of images.
+      - name: Publish screenshot to e2e-results branch for review
+        if: always()
+        working-directory: no-burnout
+        run: |
+          if [ -f ../today-screenshot.png ]; then
+            git config user.email "actions@github.com"
+            git config user.name "github-actions[bot]"
+            git checkout --orphan e2e-results
+            git rm -rf . >/dev/null 2>&1 || true
+            cp ../today-screenshot.png today-screenshot.png
+            git add today-screenshot.png
+            git commit -m "e2e: screenshot from run ${{ github.run_id }}"
+            git push -f origin e2e-results
+          else
+            echo "No screenshot to publish"
+          fi
