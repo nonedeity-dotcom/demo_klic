@@ -137,8 +137,8 @@ export default function TodayScreen() {
             >
               <View style={[styles.checkbox, checked && styles.checkboxChecked]} />
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={styles.label}>{h.label}</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                  <Text style={[styles.label, { flexShrink: 1 }]}>{h.label}</Text>
                   {h.auto === "screentime" && (
                     <View style={styles.autoTag}>
                       <Feather name="smartphone" size={9} color={colors.textMuted} />

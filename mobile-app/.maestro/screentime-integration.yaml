@@ -9,7 +9,11 @@
 # fold on the emulator's 320x640 viewport — confirmed by log: the header
 # assertion passed instantly, but the habit label failed even though the
 # screen had rendered correctly. scrollUntilVisible finds it by scrolling
-# the list instead of assuming it starts on-screen.
+# the list instead of assuming it starts on-screen. The "Creker" tag sits
+# next to the label on a row that now wraps on narrow screens (fixed a real
+# overflow bug: the tag was rendering off-screen because the row had no
+# flexWrap), so it can land on its own line below the label — scrolled to
+# separately rather than assumed to already be in frame.
 appId: com.yourcompany.noburnout
 ---
 - launchApp
@@ -19,5 +23,9 @@ appId: com.yourcompany.noburnout
       text: "Экранное время в норме"
     direction: DOWN
 - assertVisible: "Экранное время в норме"
+- scrollUntilVisible:
+    element:
+      text: "Creker"
+    direction: DOWN
 - assertVisible: "Creker"
 - takeScreenshot: today
