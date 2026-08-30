@@ -42,20 +42,36 @@ jobs:
 
       - name: Build no-burnout release APK
         working-directory: no-burnout/mobile-app
+        env:
+          # The prebuild failures so far are near-instant (~0.5s), not a slow
+          # timeout — more consistent with a flaky IPv6 route to the registry
+          # CDN than an actually slow/overloaded server. Forcing IPv4 first
+          # costs nothing if that's not the cause.
+          NODE_OPTIONS: --dns-result-order=ipv4first
         run: |
           npm install
+
+          success=false
           for i in 1 2 3; do
-            # `cmd && break` as a bare statement still trips bash -e (GitHub Actions'
-            # default shell) on cmd's failure before `break` even runs — the `if`
-            # form is the one `set -e` exempts, so this is the version that
-            # actually retries instead of aborting on attempt 1.
-            if EXPO_OFFLINE=1 CI=1 npx expo prebuild --platform android; then
+            echo "=== prebuild attempt $i: starting ==="
+            set +e
+            EXPO_OFFLINE=1 CI=1 npx expo prebuild --platform android
+            status=$?
+            set -e
+            echo "=== prebuild attempt $i: exit status $status ==="
+            if [ "$status" -eq 0 ]; then
+              success=true
               break
             fi
-            echo "prebuild attempt $i failed (likely a registry.npmjs.org timeout fetching the bare-minimum template) — retrying in 15s"
-            rm -rf android
-            sleep 15
+            rm -rf android ios
+            echo "=== prebuild attempt $i failed — sleeping 20s before retry ==="
+            sleep 20
           done
+          if [ "$success" != true ]; then
+            echo "All 3 prebuild attempts failed — giving up"
+            exit 1
+          fi
+
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
