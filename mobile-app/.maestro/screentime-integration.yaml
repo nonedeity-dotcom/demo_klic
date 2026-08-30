@@ -7,7 +7,7 @@
 appId: com.yourcompany.noburnout
 ---
 - launchApp
-- assertVisible: "Сегодня выполнено"
+- assertVisible: "Сегодня выполнено \\d+ из \\d+"
 - assertVisible: "Экранное время в норме"
 - assertVisible: "Creker"
 - takeScreenshot: today
