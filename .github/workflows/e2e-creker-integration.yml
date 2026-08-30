@@ -45,7 +45,13 @@ jobs:
         run: |
           npm install
           for i in 1 2 3; do
-            EXPO_OFFLINE=1 CI=1 npx expo prebuild --platform android && break
+            # `cmd && break` as a bare statement still trips bash -e (GitHub Actions'
+            # default shell) on cmd's failure before `break` even runs — the `if`
+            # form is the one `set -e` exempts, so this is the version that
+            # actually retries instead of aborting on attempt 1.
+            if EXPO_OFFLINE=1 CI=1 npx expo prebuild --platform android; then
+              break
+            fi
             echo "prebuild attempt $i failed (likely a registry.npmjs.org timeout fetching the bare-minimum template) — retrying in 15s"
             rm -rf android
             sleep 15
