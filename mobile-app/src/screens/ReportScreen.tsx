@@ -1,0 +1,111 @@
+import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../api/client";
+import { colors } from "../theme/colors";
+import type { Habit, HabitLog, FocusSession } from "../types";
+
+function dateNDaysAgo(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+const weekDayLabels = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+
+export default function ReportScreen() {
+  const today = dateNDaysAgo(0);
+  const weekStart = dateNDaysAgo(6);
+
+  const { data: habits = [] } = useQuery<Habit[]>({ queryKey: ["habits"], queryFn: () => api.getHabits() as Promise<Habit[]> });
+  const { data: logs = [] } = useQuery<HabitLog[]>({
+    queryKey: ["habitLog", "week"],
+    queryFn: () => api.getHabitLog(weekStart, today) as Promise<HabitLog[]>,
+  });
+  const { data: sessions = [] } = useQuery<FocusSession[]>({
+    queryKey: ["sessions", "week"],
+    queryFn: () => api.getSessions(weekStart, today) as Promise<FocusSession[]>,
+  });
+
+  // Streak: reuse the same "half the habits done" rule as the original demo,
+  // just computed from server data instead of a local log object.
+  const days = Array.from({ length: 7 }, (_, i) => dateNDaysAgo(6 - i));
+  const doneByDay = (day: string) => logs.filter((l) => l.date.startsWith(day) && l.done).length;
+  const sessionsByDay = (day: string) => sessions.filter((s) => s.date.startsWith(day)).length;
+
+  let streak = 0;
+  for (let i = 0; i < 400; i++) {
+    const day = dateNDaysAgo(i);
+    const done = logs.filter((l) => l.date.startsWith(day) && l.done).length;
+    if (done >= Math.ceil(habits.length / 2)) streak++;
+    else if (i === 0) continue;
+    else break;
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
+      <Text style={styles.subtle}>Последние 7 дней</Text>
+      <View style={styles.statsRow}>
+        <View style={styles.statCard}>
+          <Text style={[styles.statValue, { color: colors.accent }]}>{streak}</Text>
+          <Text style={styles.statLabel}>дней подряд</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={[styles.statValue, { color: colors.accentGreen }]}>
+            {sessions.reduce((a, s) => a + 1, 0)}
+          </Text>
+          <Text style={styles.statLabel}>фокус-сессий</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sectionLabel}>Привычки по дням</Text>
+      <View style={styles.barRow}>
+        {days.map((d) => {
+          const done = doneByDay(d);
+          const pct = Math.max(4, (done / Math.max(1, habits.length)) * 100);
+          return (
+            <View key={d} style={styles.barCol}>
+              <View style={styles.barTrack}>
+                <View
+                  style={[
+                    styles.bar,
+                    { height: `${pct}%`, backgroundColor: done >= Math.ceil(habits.length / 2) ? colors.accentGreen : colors.accent },
+                  ]}
+                />
+              </View>
+              <Text style={styles.barLabel}>{weekDayLabels[new Date(d).getDay()]}</Text>
+            </View>
+          );
+        })}
+      </View>
+
+      <Text style={styles.sectionLabel}>Фокус-сессии по дням</Text>
+      <View style={styles.barRow}>
+        {days.map((d) => {
+          const count = sessionsByDay(d);
+          return (
+            <View key={d} style={styles.barCol}>
+              <View style={styles.barTrack}>
+                <View style={[styles.bar, { height: `${Math.min(100, count * 25) || 4}%`, backgroundColor: colors.blue }]} />
+              </View>
+              <Text style={styles.barLabel}>{count || ""}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bg },
+  subtle: { color: colors.textMuted, fontSize: 13, marginBottom: 16 },
+  statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
+  statCard: { flex: 1, backgroundColor: colors.card, borderRadius: 16, padding: 14 },
+  statValue: { fontSize: 22, fontWeight: "700" },
+  statLabel: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  sectionLabel: { color: colors.textMuted, fontSize: 12, marginBottom: 8, marginTop: 8 },
+  barRow: { flexDirection: "row", gap: 8, height: 70, marginBottom: 24, alignItems: "flex-end" },
+  barCol: { flex: 1, alignItems: "center", gap: 4, height: "100%" },
+  barTrack: { flex: 1, width: "100%", justifyContent: "flex-end" },
+  bar: { width: "100%", borderRadius: 4 },
+  barLabel: { color: colors.textMuted, fontSize: 10 },
+});

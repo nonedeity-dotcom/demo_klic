@@ -1,0 +1,163 @@
+// Data model for the "no-burnout" habit/focus tracker.
+// Mirrors the storage keys used in the original React demo (habit-log-v1,
+// timer-stats-v1, habits-list-v1, energy-log-v1, daily-question-v1,
+// triggers-v1, triggers-list-v1, celebrated-milestones-v1) but normalized
+// into relational tables scoped per user.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  habits            Habit[]
+  habitLogs         HabitLog[]
+  triggers          Trigger[]
+  triggerLogs       TriggerLog[]
+  energyLogs        EnergyLog[]
+  focusSessions     FocusSession[]
+  dailyQuestions    DailyQuestion[]
+  celebratedStreaks CelebratedMilestone[]
+  pushTokens        PushToken[]
+  reminderSettings  ReminderSetting[]
+}
+
+// --- Habits (checklist tab) ---
+
+model Habit {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  hint      String?
+  sortOrder Int      @default(0)
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  logs HabitLog[]
+
+  @@index([userId])
+}
+
+model HabitLog {
+  id      String   @id @default(uuid())
+  userId  String
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  habitId String
+  habit   Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  date    DateTime @db.Date // day the checkbox belongs to (local day, stored as UTC midnight)
+  done    Boolean  @default(true)
+
+  @@unique([habitId, date])
+  @@index([userId, date])
+}
+
+// --- Triggers tab ---
+
+model Trigger {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  logs TriggerLog[]
+
+  @@index([userId])
+}
+
+model TriggerLog {
+  id        String  @id @default(uuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  triggerId String
+  trigger   Trigger @relation(fields: [triggerId], references: [id], onDelete: Cascade)
+  removed   Boolean @default(true) // "убрал" toggle state, not date-scoped in the original
+
+  @@unique([triggerId])
+  @@index([userId])
+}
+
+// --- Energy tab (hourly self-rating) ---
+
+model EnergyLog {
+  id     String   @id @default(uuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date   DateTime @db.Date
+  hour   Int // 0-23
+  value  Int // 1-10, 0/absent = not set
+
+  @@unique([userId, date, hour])
+  @@index([userId, date])
+}
+
+// --- Focus timer sessions ---
+
+model FocusSession {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  durationMin Int
+  completedAt DateTime @default(now())
+
+  @@index([userId, date])
+}
+
+// --- Daily question tab ---
+
+model DailyQuestion {
+  id     String   @id @default(uuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date   DateTime @db.Date
+  text   String
+
+  @@unique([userId, date])
+}
+
+// --- Streak celebration state (avoid re-firing the same milestone) ---
+
+model CelebratedMilestone {
+  id        String @id @default(uuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestone Int // 7, 14, 30, 66...
+
+  @@unique([userId, milestone])
+}
+
+// --- Push notifications ---
+
+model PushToken {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expoToken  String   @unique
+  deviceId   String?
+  platform   String? // "ios" | "android"
+  createdAt  DateTime @default(now())
+}
+
+model ReminderSetting {
+  id           String  @id @default(uuid())
+  userId       String
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hour         Int // local hour to run the "did you finish your habits" check, e.g. 21
+  minute       Int     @default(0)
+  timezone     String  @default("UTC")
+  enabled      Boolean @default(true)
+
+  @@unique([userId])
+}
