@@ -139,12 +139,28 @@ jobs:
           # creker`). So every line here is self-contained: no bare `cd`, no
           # `export` relied on by a later line, no `\` continuation across
           # lines — dependent steps are chained with `&&` inside one line.
+          #
+          # The real bug behind every prior "checkbox never auto-ticks" run:
+          # `pm list packages` right after this step showed ONLY no-burnout
+          # installed — creker was gone, despite SeedTestDataTest passing
+          # moments earlier. `./gradlew connectedDebugAndroidTest` (AGP's
+          # standard task) installs, runs, then UNINSTALLS the app under test
+          # as part of its own cleanup — wiping creker's freshly-seeded Room
+          # DB with it before no-burnout ever got to query it. That's the
+          # actual reason ContentResolver saw "Failed to find provider info":
+          # the app genuinely wasn't there, not a package-visibility problem.
+          # Fixed by building + installing creker's app and androidTest APKs
+          # with plain `adb install` (persists), then running only the one
+          # test class directly via `am instrument` — which does not
+          # uninstall anything afterward.
           script: |
             chmod +x creker/gradlew
-            (cd creker && ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.creker.screentime.SeedTestDataTest --no-daemon)
+            (cd creker && ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon)
+            adb install -r creker/app/build/outputs/apk/debug/app-debug.apk
+            adb install -r creker/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w -e class com.creker.screentime.SeedTestDataTest com.creker.screentime.test/androidx.test.runner.AndroidJUnitRunner
             adb install -r ./app-release.apk
             echo "=== pm list packages (creker/noburnout) ===" && adb shell pm list packages | grep -E "creker|noburnout"
-            echo "=== dumpsys package creker: Providers ===" && adb shell dumpsys package com.creker.screentime | grep -A5 "Providers:"
             echo "=== adb shell content query (broad shell visibility) ===" && adb shell content query --uri content://com.creker.screentime.provider/device_usage --bind 0:s:$(date -u +%F) --bind 1:s:$(date -u +%F)
             curl -Ls "https://get.maestro.mobile.dev" | bash
             (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml)
