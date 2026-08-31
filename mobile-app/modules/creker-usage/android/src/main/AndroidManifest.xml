@@ -8,4 +8,18 @@
   -->
   <uses-permission android:name="com.creker.screentime.permission.READ_USAGE" />
 
+  <!--
+    Confirmed by a real device's logcat (E ActivityThread: "Failed to find
+    provider info for com.creker.screentime.provider"): holding the permission
+    above is not enough on Android 11+ (API 30+). Package-visibility filtering
+    happens before the permission check — without this <queries> declaration,
+    ContentResolver can't even resolve the provider, permission or not, so
+    every query silently returns null/empty exactly like "creker isn't
+    installed" would. Declaring just this one authority (not
+    QUERY_ALL_PACKAGES) is the minimal, correct fix.
+  -->
+  <queries>
+    <provider android:authorities="com.creker.screentime.provider" />
+  </queries>
+
 </manifest>
