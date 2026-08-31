@@ -16,11 +16,15 @@ export async function syncScreenTimeHabit(habits: Habit[], date: string): Promis
   if (!target) return false;
 
   const rows = await getCrekerScreenTime(date, date);
+  // TEMPORARY diagnostic logging for the E2E investigation — see
+  // modules/creker-usage/index.ts for the matching native-call-site logs.
+  console.log("[syncScreenTimeHabit] date:", date, "rows:", JSON.stringify(rows));
   const today = rows.find((r) => r.date === date);
   if (!today) return false; // no creker data for today yet — leave it to manual toggling
 
   const limitMin = await api.getScreenTimeLimitMinutes();
   const withinLimit = today.screenMillis <= limitMin * 60_000;
+  console.log("[syncScreenTimeHabit] limitMin:", limitMin, "withinLimit:", withinLimit);
   await api.toggleHabit(target.id, date, withinLimit);
   return true;
 }
