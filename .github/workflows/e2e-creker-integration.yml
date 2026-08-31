@@ -143,6 +143,9 @@ jobs:
             chmod +x creker/gradlew
             (cd creker && ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.creker.screentime.SeedTestDataTest --no-daemon)
             adb install -r ./app-release.apk
+            echo "=== pm list packages (creker/noburnout) ===" && adb shell pm list packages | grep -E "creker|noburnout"
+            echo "=== dumpsys package creker: Providers ===" && adb shell dumpsys package com.creker.screentime | grep -A5 "Providers:"
+            echo "=== adb shell content query (broad shell visibility) ===" && adb shell content query --uri content://com.creker.screentime.provider/device_usage --bind 0:s:$(date -u +%F) --bind 1:s:$(date -u +%F)
             curl -Ls "https://get.maestro.mobile.dev" | bash
             (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml)
             adb logcat -d > logcat.txt
