@@ -67,6 +67,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
+      - name: Dump merged manifest for diagnosis
+        working-directory: no-burnout/mobile-app
+        run: |
+          MANIFEST=$(find android/app/build/intermediates -iname "AndroidManifest.xml" -path "*release*" | head -n 1)
+          echo "Merged manifest: $MANIFEST"
+          if [ -n "$MANIFEST" ]; then
+            grep -n -A2 -B2 "creker\|queries\|READ_USAGE" "$MANIFEST" || echo "no creker-related lines found in merged manifest"
+          fi
+
       - name: Locate no-burnout APK
         id: nb_apk
         run: |
