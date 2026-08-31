@@ -39,9 +39,10 @@ export default function RootTabs() {
           tabBarActiveTintColor: colors.text,
           tabBarInactiveTintColor: colors.textMuted,
           tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.cardBorder },
-          // Seven tabs on a phone: the labels only fit once they stop wrapping,
-          // and "Напоминание" was cut off mid-word before.
-          tabBarLabelStyle: { fontSize: 9 },
+          // Seven tabs share a 320px-wide screen on the smallest devices, so
+          // each gets ~45px. At 9px "Напомнить" still came back ellipsised in
+          // the device screenshot; 8px is what actually fits all seven whole.
+          tabBarLabelStyle: { fontSize: 8 },
           tabBarItemStyle: { paddingHorizontal: 0 },
         }}
       >
