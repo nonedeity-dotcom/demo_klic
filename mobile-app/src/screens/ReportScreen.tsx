@@ -1,34 +1,36 @@
 import { useEffect, useState } from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, STREAK_MILESTONES } from "../api/client";
 import { colors } from "../theme/colors";
+import { dateNDaysAgo, weekdayLabel } from "../lib/date";
+import { plural } from "../lib/plural";
+import { useTodayKey } from "../lib/useTodayKey";
 import TwoCurves from "../components/TwoCurves";
 import type { Habit, HabitLog, FocusSession } from "../types";
 
-function dateNDaysAgo(n: number) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-const weekDayLabels = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
-
 export default function ReportScreen() {
-  const today = dateNDaysAgo(0);
+  const qc = useQueryClient();
+  // Re-renders when the local day turns over, so a report left open overnight
+  // rolls onto the new week instead of freezing on yesterday.
+  const today = useTodayKey();
   const weekStart = dateNDaysAgo(6);
   const streakWindowStart = dateNDaysAgo(120); // long enough to reach the 66-day milestone
 
   const { data: habits = [] } = useQuery<Habit[]>({ queryKey: ["habits"], queryFn: () => api.getHabits() as Promise<Habit[]> });
+  // The date range belongs in the key: with a constant "week"/"streak" key,
+  // React Query happily served the previous day's cached rows after midnight,
+  // because only the closure changed and nothing told it to refetch.
   const { data: logs = [] } = useQuery<HabitLog[]>({
-    queryKey: ["habitLog", "week"],
+    queryKey: ["habitLog", "week", weekStart, today],
     queryFn: () => api.getHabitLog(weekStart, today) as Promise<HabitLog[]>,
   });
   const { data: streakLogs = [] } = useQuery<HabitLog[]>({
-    queryKey: ["habitLog", "streak"],
+    queryKey: ["habitLog", "streak", streakWindowStart, today],
     queryFn: () => api.getHabitLog(streakWindowStart, today) as Promise<HabitLog[]>,
   });
   const { data: sessions = [] } = useQuery<FocusSession[]>({
-    queryKey: ["sessions", "week"],
+    queryKey: ["sessions", "week", weekStart, today],
     queryFn: () => api.getSessions(weekStart, today) as Promise<FocusSession[]>,
   });
   const { data: celebrated = [] } = useQuery<number[]>({
@@ -39,16 +41,31 @@ export default function ReportScreen() {
   // Streak: a day "counts" once at least half the habits are done that day —
   // same rule as the original demo.
   const days = Array.from({ length: 7 }, (_, i) => dateNDaysAgo(6 - i));
-  const doneByDay = (day: string) => logs.filter((l) => l.date.startsWith(day) && l.done).length;
-  const sessionsByDay = (day: string) => sessions.filter((s) => s.date.startsWith(day)).length;
+
+  // Logs of deleted habits must not count towards any of these numbers.
+  const habitIds = new Set(habits.map((h) => h.id));
+  const countsFor = (log: HabitLog) => log.done && habitIds.has(log.habitId);
+
+  const doneByDay = (day: string) => logs.filter((l) => l.date === day && countsFor(l)).length;
+  const sessionsByDay = (day: string) => sessions.filter((s) => s.date === day).length;
+
+  // How many habits a day needs to "count". With no habits at all there is
+  // nothing to be consistent about: the old `done >= Math.ceil(0 / 2)` was
+  // `0 >= 0` — always true — so an empty checklist reported a 120-day streak
+  // with every milestone ticked, and every visit here flashed that while the
+  // habits query was still loading.
+  const dayTarget = Math.ceil(habits.length / 2);
 
   let streak = 0;
-  for (let i = 0; i < 120; i++) {
-    const day = dateNDaysAgo(i);
-    const done = streakLogs.filter((l) => l.date.startsWith(day) && l.done).length;
-    if (done >= Math.ceil(habits.length / 2)) streak++;
-    else if (i === 0) continue;
-    else break;
+  if (dayTarget > 0) {
+    for (let i = 0; i < 120; i++) {
+      const day = dateNDaysAgo(i);
+      const done = streakLogs.filter((l) => l.date === day && countsFor(l)).length;
+      if (done >= dayTarget) streak++;
+      // Today still being unfinished shouldn't break yesterday's streak.
+      else if (i === 0) continue;
+      else break;
+    }
   }
 
   const nextMilestone = STREAK_MILESTONES.find((m) => m > streak);
@@ -57,9 +74,15 @@ export default function ReportScreen() {
   useEffect(() => {
     const hit = STREAK_MILESTONES.find((m) => m === streak);
     if (hit && !celebrated.includes(hit)) {
-      api.celebrateMilestone(hit).then(() => setJustCelebrated(hit));
+      api.celebrateMilestone(hit).then(() => {
+        setJustCelebrated(hit);
+        // Without refreshing the list of already-celebrated milestones, the
+        // cached empty array kept saying "not celebrated yet" and the banner
+        // came back every time this tab was reopened.
+        qc.invalidateQueries({ queryKey: ["milestones"] });
+      });
     }
-  }, [streak, celebrated]);
+  }, [streak, celebrated, qc]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
@@ -74,7 +97,7 @@ export default function ReportScreen() {
         <View style={styles.celebration}>
           <Text style={styles.celebrationEmoji}>🔥</Text>
           <Text style={styles.celebrationText}>
-            {justCelebrated} дней подряд! По видео это{" "}
+            {justCelebrated} {plural(justCelebrated, ["день", "дня", "дней"])} подряд! По видео это{" "}
             {justCelebrated >= 66 ? "автопилот — привычка закрепилась" : "важная веха на пути к автопилоту"}.
           </Text>
         </View>
@@ -92,7 +115,7 @@ export default function ReportScreen() {
       </View>
       <Text style={[styles.subtle, { marginBottom: 20 }]}>
         {nextMilestone
-          ? `${streak} из ${nextMilestone} дней до следующей вехи`
+          ? `${streak} из ${nextMilestone} ${plural(nextMilestone, ["дня", "дней", "дней"])} до следующей вехи`
           : "Все вехи пройдены — привычка на автопилоте"}
       </Text>
 
@@ -100,13 +123,13 @@ export default function ReportScreen() {
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <Text style={[styles.statValue, { color: colors.accentGreen }]}>{streak}</Text>
-          <Text style={styles.statLabel}>дней подряд</Text>
+          <Text style={styles.statLabel}>{plural(streak, ["день", "дня", "дней"])} подряд</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: colors.blue }]}>
-            {sessions.reduce((a, s) => a + 1, 0)}
+          <Text style={[styles.statValue, { color: colors.blue }]}>{sessions.length}</Text>
+          <Text style={styles.statLabel}>
+            {plural(sessions.length, ["фокус-сессия", "фокус-сессии", "фокус-сессий"])}
           </Text>
-          <Text style={styles.statLabel}>фокус-сессий</Text>
         </View>
       </View>
 
@@ -121,11 +144,15 @@ export default function ReportScreen() {
                 <View
                   style={[
                     styles.bar,
-                    { height: `${pct}%`, backgroundColor: done >= Math.ceil(habits.length / 2) ? colors.accentGreen : colors.accent },
+                    {
+                      height: `${pct}%`,
+                      backgroundColor:
+                        dayTarget > 0 && done >= dayTarget ? colors.accentGreen : colors.accent,
+                    },
                   ]}
                 />
               </View>
-              <Text style={styles.barLabel}>{weekDayLabels[new Date(d).getDay()]}</Text>
+              <Text style={styles.barLabel}>{weekdayLabel(d)}</Text>
             </View>
           );
         })}

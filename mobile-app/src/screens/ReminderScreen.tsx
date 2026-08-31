@@ -9,6 +9,7 @@ function pad(n: number) {
 
 export default function ReminderScreen() {
   const [settings, setSettings] = useState<ReminderSettings | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
   useEffect(() => {
     getReminderSettings().then(setSettings);
@@ -17,8 +18,13 @@ export default function ReminderScreen() {
   if (!settings) return null;
 
   const update = (next: ReminderSettings) => {
-    setSettings(next);
-    setReminderSettings(next);
+    setSettings(next); // optimistic, so the controls stay responsive
+    setReminderSettings(next).then((applied) => {
+      // If the OS refused the permission, `enabled` comes back false — reflect
+      // that instead of leaving a switch that claims reminders are on.
+      setSettings(applied);
+      setPermissionDenied(next.enabled && !applied.enabled);
+    });
   };
 
   const bumpHour = (delta: number) => update({ ...settings, hour: (settings.hour + delta + 24) % 24 });
@@ -60,6 +66,13 @@ export default function ReminderScreen() {
           thumbColor={colors.text}
         />
       </View>
+
+      {permissionDenied && (
+        <Text style={styles.deniedNote}>
+          Уведомления запрещены в настройках системы — напоминание не придёт. Разреши их для этого
+          приложения и включи снова.
+        </Text>
+      )}
     </View>
   );
 }
@@ -92,4 +105,5 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   enableLabel: { color: colors.text, fontSize: 15, fontWeight: "500" },
+  deniedNote: { color: colors.accent, fontSize: 12, lineHeight: 17, marginTop: 12 },
 });

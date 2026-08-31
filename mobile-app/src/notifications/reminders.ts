@@ -38,32 +38,60 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return status === "granted";
 }
 
-export async function setReminderSettings(settings: ReminderSettings): Promise<void> {
-  await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+// Scheduling is cancel-then-reschedule, and the time picker fires one of these
+// per tap on +/−. Run concurrently, two calls both read the same stored id,
+// both cancel it, and both schedule a new one — leaving an orphan reminder
+// nobody can cancel any more. Chaining keeps them strictly ordered.
+let scheduleChain: Promise<unknown> = Promise.resolve();
 
-  const prevId = await AsyncStorage.getItem(NOTIFICATION_ID_KEY);
-  if (prevId) {
-    await Notifications.cancelScheduledNotificationAsync(prevId);
-    await AsyncStorage.removeItem(NOTIFICATION_ID_KEY);
-  }
+/**
+ * Persists the settings and re-arms the OS notification.
+ *
+ * Returns what was actually stored: if the user denies the notification
+ * permission we cannot honour `enabled: true`, so it comes back as `false`.
+ * Previously the requested value was written to storage before the permission
+ * check and the early return left the toggle showing "on" with nothing
+ * scheduled behind it.
+ */
+export async function setReminderSettings(settings: ReminderSettings): Promise<ReminderSettings> {
+  const run = async (): Promise<ReminderSettings> => {
+    const prevId = await AsyncStorage.getItem(NOTIFICATION_ID_KEY);
+    if (prevId) {
+      await Notifications.cancelScheduledNotificationAsync(prevId);
+      await AsyncStorage.removeItem(NOTIFICATION_ID_KEY);
+    }
 
-  if (!settings.enabled) return;
+    if (!settings.enabled) {
+      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      return settings;
+    }
 
-  const granted = await requestNotificationPermission();
-  if (!granted) return;
+    const granted = await requestNotificationPermission();
+    if (!granted) {
+      const denied = { ...settings, enabled: false };
+      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(denied));
+      return denied;
+    }
 
-  const id = await Notifications.scheduleNotificationAsync({
-    content: {
-      title: "Не сбивай ритм",
-      body: "Загляни в чек-лист привычек — ещё есть время сегодня.",
-    },
-    trigger: {
-      hour: settings.hour,
-      minute: settings.minute,
-      repeats: true,
-    },
-  });
-  await AsyncStorage.setItem(NOTIFICATION_ID_KEY, id);
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Не сбивай ритм",
+        body: "Загляни в чек-лист привычек — ещё есть время сегодня.",
+      },
+      trigger: {
+        hour: settings.hour,
+        minute: settings.minute,
+        repeats: true,
+      },
+    });
+    await AsyncStorage.setItem(NOTIFICATION_ID_KEY, id);
+    await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    return settings;
+  };
+
+  const next = scheduleChain.then(run, run);
+  scheduleChain = next.catch(() => undefined);
+  return next;
 }
 
 // Re-arms the OS-scheduled notification on app start (e.g. after the app

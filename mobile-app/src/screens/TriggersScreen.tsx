@@ -4,6 +4,7 @@ import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { colors } from "../theme/colors";
+import { confirmDestructive } from "../lib/confirm";
 import type { Trigger } from "../types";
 
 export default function TriggersScreen() {
@@ -46,6 +47,13 @@ export default function TriggersScreen() {
     mutationFn: (id: string) => api.removeTrigger(id),
     onSuccess: invalidate,
   });
+
+  // Same as on the checklist: the trash icon sits next to the edit icon, and a
+  // mis-tap used to delete outright.
+  const confirmRemove = (t: Trigger) =>
+    confirmDestructive("Удалить триггер?", `«${t.label}» будет удалён из списка.`, () =>
+      removeTrigger.mutate(t.id),
+    );
 
   const startEdit = (t: Trigger) => {
     setEditingId(t.id);
@@ -98,7 +106,13 @@ export default function TriggersScreen() {
 
         return (
           <View key={t.id} style={[styles.card, t.removed && styles.cardRemoved]}>
-            <Pressable onPress={() => toggle.mutate({ id: t.id, removed: !t.removed })} style={styles.cardMain}>
+            <Pressable
+              onPress={() => toggle.mutate({ id: t.id, removed: !t.removed })}
+              style={styles.cardMain}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: t.removed }}
+              accessibilityLabel={t.label}
+            >
               <View style={[styles.dot, t.removed && styles.dotRemoved]} />
               <Text style={styles.label}>{t.label}</Text>
               <Text style={styles.status}>{t.removed ? "убрал" : "ещё нет"}</Text>
@@ -106,7 +120,7 @@ export default function TriggersScreen() {
             <Pressable onPress={() => startEdit(t)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${t.label}`}>
               <Feather name="edit-2" size={14} color={colors.textMuted} />
             </Pressable>
-            <Pressable onPress={() => removeTrigger.mutate(t.id)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${t.label}`}>
+            <Pressable onPress={() => confirmRemove(t)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${t.label}`}>
               <Feather name="trash-2" size={14} color={colors.textMuted} />
             </Pressable>
           </View>

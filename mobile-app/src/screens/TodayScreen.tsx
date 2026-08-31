@@ -4,16 +4,14 @@ import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { colors } from "../theme/colors";
+import { confirmDestructive } from "../lib/confirm";
+import { useTodayKey } from "../lib/useTodayKey";
 import { syncScreenTimeHabit } from "../integrations/screenTime";
 import type { Habit, HabitLog } from "../types";
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export default function TodayScreen() {
   const qc = useQueryClient();
-  const today = todayKey();
+  const today = useTodayKey();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [newLabel, setNewLabel] = useState("");
@@ -56,7 +54,10 @@ export default function TodayScreen() {
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(["habitLog", today], ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["habitLog", today] }),
+    // Invalidate the whole habitLog prefix, not just today's key: the report
+    // screen keeps its own week/streak queries, and ticking a habit here left
+    // them showing yesterday's numbers until their cache happened to expire.
+    onSettled: () => qc.invalidateQueries({ queryKey: ["habitLog"] }),
   });
 
   const addHabit = useMutation({
@@ -78,8 +79,20 @@ export default function TodayScreen() {
 
   const removeHabit = useMutation({
     mutationFn: (id: string) => api.removeHabit(id),
-    onSuccess: invalidateHabits,
+    // Removing a habit now also drops its history, so today's count stops
+    // including habits that no longer exist — invalidate both queries.
+    onSuccess: () => {
+      invalidateHabits();
+      qc.invalidateQueries({ queryKey: ["habitLog"] });
+    },
   });
+
+  // A single mis-tap on the trash icon used to delete a habit and its whole
+  // history instantly, with no undo.
+  const confirmRemove = (h: Habit) =>
+    confirmDestructive("Удалить привычку?", `«${h.label}» и её отметки за все дни будут удалены.`, () =>
+      removeHabit.mutate(h.id),
+    );
 
   const startEdit = (h: Habit) => {
     setEditingId(h.id);
@@ -96,7 +109,12 @@ export default function TodayScreen() {
     else setAdding(false);
   };
 
-  const doneCount = logs.filter((l) => l.done).length;
+  // Count only habits that still exist: a stale log for a deleted habit used
+  // to keep inflating this ("1 из 9" right after deleting the one ticked
+  // habit). removeHabit purges logs now, but this also covers logs left over
+  // from before the fix.
+  const habitIds = new Set(habits.map((h) => h.id));
+  const doneCount = logs.filter((l) => l.done && habitIds.has(l.habitId)).length;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
@@ -134,6 +152,9 @@ export default function TodayScreen() {
             <Pressable
               onPress={() => toggle.mutate({ habitId: h.id, done: !checked })}
               style={styles.cardMain}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked }}
+              accessibilityLabel={h.label}
             >
               <View style={[styles.checkbox, checked && styles.checkboxChecked]} />
               <View style={{ flex: 1 }}>
@@ -152,7 +173,7 @@ export default function TodayScreen() {
             <Pressable onPress={() => startEdit(h)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${h.label}`}>
               <Feather name="edit-2" size={14} color={colors.textMuted} />
             </Pressable>
-            <Pressable onPress={() => removeHabit.mutate(h.id)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${h.label}`}>
+            <Pressable onPress={() => confirmRemove(h)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${h.label}`}>
               <Feather name="trash-2" size={14} color={colors.textMuted} />
             </Pressable>
           </View>

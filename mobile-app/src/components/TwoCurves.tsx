@@ -8,7 +8,10 @@ import { colors } from "../theme/colors";
 // = spike/warm, accentGreen = steady/natural) already points at this shape;
 // this is where it actually gets drawn, once, instead of staying a metaphor.
 export default function TwoCurves({ width = 260, height = 92 }: { width?: number; height?: number }) {
-  const w = width;
+  // The end-point marker sits exactly on the right edge, so half of it used to
+  // be clipped by the viewport. Inset the drawing by the dot's radius.
+  const DOT_R = 3;
+  const w = width - DOT_R * 2;
   const h = height;
   const base = h * 0.62;
 
@@ -21,11 +24,11 @@ export default function TwoCurves({ width = 260, height = 92 }: { width?: number
 
   return (
     <View style={{ width, alignItems: "center" }}>
-      <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+      <Svg width={width} height={h} viewBox={`${-DOT_R} 0 ${width} ${h}`}>
         <Path d={spike} stroke={colors.accent} strokeWidth={2.5} fill="none" strokeLinecap="round" opacity={0.9} />
         <Path d={natural} stroke={colors.accentGreen} strokeWidth={2.5} fill="none" strokeLinecap="round" />
-        <Circle cx={w * 0.32} cy={h * 0.08} r={3} fill={colors.accent} />
-        <Circle cx={w} cy={h * 0.28} r={3} fill={colors.accentGreen} />
+        <Circle cx={w * 0.32} cy={h * 0.08} r={DOT_R} fill={colors.accent} />
+        <Circle cx={w} cy={h * 0.28} r={DOT_R} fill={colors.accentGreen} />
       </Svg>
       <View style={styles.legendRow}>
         <View style={styles.legendItem}>

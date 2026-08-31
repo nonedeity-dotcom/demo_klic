@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, TextInput, Modal, StyleSheet } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, Pressable, TextInput, Modal, AppState, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Feather } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { colors } from "../theme/colors";
+import { todayKey } from "../lib/date";
 import type { RewardOption } from "../types";
 
 const WORK_MIN = 50;
@@ -14,17 +15,20 @@ const STROKE = 6;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export default function FocusScreen() {
   const qc = useQueryClient();
   const [mode, setMode] = useState<"work" | "break">("work");
-  const [workMin, setWorkMin] = useState(WORK_MIN);
-  const [breakMin, setBreakMin] = useState(BREAK_MIN);
+  const workMin = WORK_MIN;
+  const breakMin = BREAK_MIN;
   const [secondsLeft, setSecondsLeft] = useState(WORK_MIN * 60);
   const [running, setRunning] = useState(false);
+  // The timer is driven by a wall-clock deadline, not by counting ticks.
+  // setInterval only fires while JS is running, so the old version froze the
+  // moment the screen locked or the app went to the background — in an app
+  // whose whole advice is "put the phone in another room", the 50 minutes
+  // never actually elapsed. Now the interval only *renders* the remaining
+  // time; the truth is `deadlineRef` vs. Date.now().
+  const deadlineRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [showReward, setShowReward] = useState(false);
@@ -39,11 +43,14 @@ export default function FocusScreen() {
   const invalidateOptions = () => qc.invalidateQueries({ queryKey: ["rewardOptions"] });
 
   const logSession = useMutation({
-    mutationFn: (durationMin: number) =>
-      api.addSession(new Date().toISOString().slice(0, 10), durationMin),
+    mutationFn: (durationMin: number) => api.addSession(todayKey(), durationMin),
+    // The report screen reads ["sessions", "week"]; without invalidating, a
+    // finished session didn't show up there until the cache happened to expire.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
   });
   const logReward = useMutation({
     mutationFn: (text: string) => api.addReward(todayKey(), text),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rewards"] }),
   });
   const addOption = useMutation({
     mutationFn: (label: string) => api.addRewardOption(label),
@@ -57,28 +64,16 @@ export default function FocusScreen() {
     onSuccess: invalidateOptions,
   });
 
-  useEffect(() => {
-    if (running) {
-      intervalRef.current = setInterval(() => {
-        setSecondsLeft((s) => {
-          if (s <= 1) {
-            clearInterval(intervalRef.current!);
-            handleSessionEnd();
-            return 0;
-          }
-          return s - 1;
-        });
-      }, 1000);
-    } else if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running]);
+  // Guards against the phase flipping twice: the old code called this from
+  // inside a setSecondsLeft updater, and React may run an updater more than
+  // once — which logged the same focus session twice and reopened the modal.
+  const endingRef = useRef(false);
 
-  function handleSessionEnd() {
+  const handleSessionEnd = useCallback(() => {
+    if (endingRef.current) return;
+    endingRef.current = true;
+
+    deadlineRef.current = null;
     setRunning(false);
     if (mode === "work") {
       logSession.mutate(workMin);
@@ -89,7 +84,49 @@ export default function FocusScreen() {
       setMode("work");
       setSecondsLeft(workMin * 60);
     }
-  }
+    // Released on the next tick, once the state updates above are queued.
+    setTimeout(() => {
+      endingRef.current = false;
+    }, 0);
+  }, [mode, workMin, breakMin, logSession]);
+
+  // Read through a ref so the ticking effect below depends only on `running`.
+  // Depending on the callback itself would tear down and rebuild the interval
+  // on every single re-render — i.e. twice a second while the timer runs.
+  const endRef = useRef(handleSessionEnd);
+  useEffect(() => {
+    endRef.current = handleSessionEnd;
+  }, [handleSessionEnd]);
+
+  useEffect(() => {
+    if (!running) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      return;
+    }
+
+    // Recompute from the deadline rather than decrementing, so time that
+    // passed while the app was backgrounded is accounted for.
+    const tick = () => {
+      const deadline = deadlineRef.current;
+      if (deadline == null) return;
+      const remaining = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+      if (remaining === 0) endRef.current();
+    };
+
+    intervalRef.current = setInterval(tick, 500);
+    // Catch up immediately on resume instead of waiting for the next tick.
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") tick();
+    });
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      sub.remove();
+    };
+  }, [running]);
 
   function pickReward(text: string) {
     if (!text.trim()) return;
@@ -103,10 +140,28 @@ export default function FocusScreen() {
   const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
   const ss = String(secondsLeft % 60).padStart(2, "0");
 
+  const toggleRunning = () => {
+    if (running) {
+      // Pause: freeze at whatever the deadline says right now.
+      const deadline = deadlineRef.current;
+      if (deadline != null) setSecondsLeft(Math.max(0, Math.round((deadline - Date.now()) / 1000)));
+      deadlineRef.current = null;
+      setRunning(false);
+    } else {
+      if (secondsLeft <= 0) return;
+      deadlineRef.current = Date.now() + secondsLeft * 1000;
+      setRunning(true);
+    }
+  };
+
   const resetTimer = () => {
+    deadlineRef.current = null;
     setRunning(false);
     setMode("work");
     setSecondsLeft(workMin * 60);
+    // A reward prompt left open from the session that just ended shouldn't
+    // survive an explicit reset.
+    setShowReward(false);
   };
 
   return (
@@ -139,7 +194,7 @@ export default function FocusScreen() {
       </View>
 
       <View style={{ flexDirection: "row", gap: 12, marginTop: 28 }}>
-        <Pressable onPress={() => setRunning((r) => !r)} style={styles.primaryBtn}>
+        <Pressable onPress={toggleRunning} style={styles.primaryBtn}>
           <Text style={styles.primaryBtnText}>
             {running ? "Пауза" : secondsLeft === totalSecs ? "Старт" : "Продолжить"}
           </Text>

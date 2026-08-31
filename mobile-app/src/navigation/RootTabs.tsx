@@ -1,5 +1,6 @@
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 
 import TodayScreen from "../screens/TodayScreen";
@@ -19,6 +20,16 @@ const navTheme = {
   colors: { ...DarkTheme.colors, background: colors.bg, card: colors.card, border: colors.cardBorder },
 };
 
+// No screen declared a tabBarIcon, so React Navigation fell back to its
+// built-in placeholder — a "⏷" glyph that the Android system font has no
+// character for, which is why all seven tabs showed empty tofu boxes on a real
+// device. Each tab names its own icon now.
+type FeatherName = React.ComponentProps<typeof Feather>["name"];
+
+const icon =
+  (name: FeatherName) =>
+  ({ color, size }: { color: string; size: number }) => <Feather name={name} size={size} color={color} />;
+
 export default function RootTabs() {
   return (
     <NavigationContainer theme={navTheme}>
@@ -28,15 +39,23 @@ export default function RootTabs() {
           tabBarActiveTintColor: colors.text,
           tabBarInactiveTintColor: colors.textMuted,
           tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.cardBorder },
+          // Seven tabs on a phone: the labels only fit once they stop wrapping,
+          // and "Напоминание" was cut off mid-word before.
+          tabBarLabelStyle: { fontSize: 9 },
+          tabBarItemStyle: { paddingHorizontal: 0 },
         }}
       >
-        <Tab.Screen name="Чек-лист" component={TodayScreen} />
-        <Tab.Screen name="Фокус" component={FocusScreen} />
-        <Tab.Screen name="Энергия" component={EnergyScreen} />
-        <Tab.Screen name="Триггеры" component={TriggersScreen} />
-        <Tab.Screen name="Вопрос" component={QuestionScreen} />
-        <Tab.Screen name="Отчёт" component={ReportScreen} />
-        <Tab.Screen name="Напоминание" component={ReminderScreen} />
+        <Tab.Screen name="Чек-лист" component={TodayScreen} options={{ tabBarIcon: icon("check-square") }} />
+        <Tab.Screen name="Фокус" component={FocusScreen} options={{ tabBarIcon: icon("target") }} />
+        <Tab.Screen name="Энергия" component={EnergyScreen} options={{ tabBarIcon: icon("activity") }} />
+        <Tab.Screen name="Триггеры" component={TriggersScreen} options={{ tabBarIcon: icon("zap-off") }} />
+        <Tab.Screen name="Вопрос" component={QuestionScreen} options={{ tabBarIcon: icon("help-circle") }} />
+        <Tab.Screen name="Отчёт" component={ReportScreen} options={{ tabBarIcon: icon("bar-chart-2") }} />
+        <Tab.Screen
+          name="Напоминание"
+          component={ReminderScreen}
+          options={{ tabBarIcon: icon("bell"), tabBarLabel: "Напомнить" }}
+        />
       </Tab.Navigator>
     </NavigationContainer>
   );

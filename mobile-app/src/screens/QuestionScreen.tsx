@@ -1,22 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { colors } from "../theme/colors";
+import { dateNDaysAgo } from "../lib/date";
+import { useTodayKey } from "../lib/useTodayKey";
 import type { DailyQuestion } from "../types";
-
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-function dateNDaysAgo(n: number) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
 
 export default function QuestionScreen() {
   const qc = useQueryClient();
-  const today = todayKey();
+  const today = useTodayKey();
   const [draft, setDraft] = useState("");
 
   const from = dateNDaysAgo(6);
@@ -25,17 +18,43 @@ export default function QuestionScreen() {
     queryFn: () => api.getQuestion(from, today) as Promise<DailyQuestion[]>,
   });
 
+  // Load the stored answer into the box once per day, not on every refetch.
+  // `history` is a fresh array after each save/refocus, so the old effect
+  // re-ran and pasted the last saved text back over whatever was being typed —
+  // keep typing after pressing "Сохранить" and your new characters vanished.
+  const loadedForDate = useRef<string | null>(null);
   useEffect(() => {
+    if (loadedForDate.current === today) return;
     const todays = history.find((q) => q.date === today);
-    if (todays) setDraft(todays.text);
+    if (todays) {
+      setDraft(todays.text);
+      loadedForDate.current = today;
+    }
   }, [history, today]);
+
+  // A new day gets an empty box rather than yesterday's answer.
+  useEffect(() => {
+    if (loadedForDate.current !== null && loadedForDate.current !== today) {
+      setDraft("");
+      loadedForDate.current = null;
+    }
+  }, [today]);
 
   const save = useMutation({
     mutationFn: (text: string) => api.setQuestion(today, text),
     onSettled: () => qc.invalidateQueries({ queryKey: ["question"] }),
   });
 
-  const past = history.filter((q) => q.date !== today);
+  const saveDraft = () => {
+    const text = draft.trim();
+    // Blurring an untouched empty field used to overwrite a real answer
+    // with "" — only persist something worth keeping.
+    if (!text) return;
+    loadedForDate.current = today;
+    save.mutate(text);
+  };
+
+  const past = history.filter((q) => q.date !== today).sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
@@ -44,13 +63,13 @@ export default function QuestionScreen() {
       <TextInput
         value={draft}
         onChangeText={setDraft}
-        onBlur={() => save.mutate(draft)}
+        onBlur={saveDraft}
         placeholder="Сегодня уберу…"
         placeholderTextColor="#5a5f68"
         multiline
         style={styles.input}
       />
-      <Pressable onPress={() => save.mutate(draft)} style={styles.saveBtn}>
+      <Pressable onPress={saveDraft} style={styles.saveBtn}>
         <Text style={styles.saveBtnText}>Сохранить</Text>
       </Pressable>
 
