@@ -8,6 +8,7 @@ import { plural } from "../lib/plural";
 import { useTodayKey } from "../lib/useTodayKey";
 import TwoCurves from "../components/TwoCurves";
 import RotatingTip from "../components/RotatingTip";
+import HabitPhase from "../components/HabitPhase";
 import type { Habit, HabitLog, FocusSession } from "../types";
 
 export default function ReportScreen() {
@@ -138,6 +139,10 @@ export default function ReportScreen() {
           </Text>
         </View>
       </View>
+
+      {/* Directly under the streak number, because it is what that number
+          means. On day 12 "самая тяжёлая фаза" is the useful part, not "12". */}
+      <HabitPhase streak={streak} />
 
       <Text style={styles.sectionLabel}>Привычки по дням</Text>
       <View style={styles.barRow}>

@@ -36,7 +36,8 @@ reserved for focus-session data).
 
 Bottom bar, in order:
 
-1. **ReportScreen** — tip of the day, then 7-day streak/bar charts. Opens first.
+1. **ReportScreen** — rotating tip, streak + which phase that streak means,
+   7-day bar charts. Opens first.
 2. **TodayScreen** — habit checklist for today
 3. **FocusScreen** — focus timer (SVG ring) with editable work/break lengths
 4. **EnergyScreen** — hourly energy grid (1-10 self-rating)
