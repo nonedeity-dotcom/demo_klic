@@ -7,6 +7,7 @@ import { dateNDaysAgo, weekdayLabel } from "../lib/date";
 import { plural } from "../lib/plural";
 import { useTodayKey } from "../lib/useTodayKey";
 import TwoCurves from "../components/TwoCurves";
+import DataBackup from "../components/DataBackup";
 import type { Habit, HabitLog, FocusSession } from "../types";
 
 export default function ReportScreen() {
@@ -172,6 +173,11 @@ export default function ReportScreen() {
           );
         })}
       </View>
+
+      {/* Backup lives here rather than behind an eighth tab: seven labels
+          already only just fit across a 320px screen, and this is the screen
+          about the accumulated history in the first place. */}
+      <DataBackup />
     </ScrollView>
   );
 }

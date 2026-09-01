@@ -324,3 +324,249 @@ export const api = {
     await write(KEYS.screenTimeLimit, minutes);
   },
 };
+
+// ---------------------------------------------------------------------------
+// Backup: export everything to one JSON blob and load it back.
+//
+// There is no account and no server, so a reinstall or a new phone used to
+// mean losing every tick, session and note. These two functions are the only
+// way that data leaves or enters the device.
+// ---------------------------------------------------------------------------
+
+/** Bump when the shape below changes incompatibly. */
+export const BACKUP_FORMAT_VERSION = 1;
+
+export interface BackupData {
+  habits: Habit[];
+  habitLog: HabitLog[];
+  triggers: Trigger[];
+  energy: EnergyLog[];
+  sessions: FocusSession[];
+  question: DailyQuestion[];
+  milestones: number[];
+  rewardOptions: RewardOption[];
+  rewards: Reward[];
+  screenTimeLimitMinutes: number;
+}
+
+/** What an import actually changed, so the UI can report it honestly. */
+export interface ImportStats {
+  habits: number;
+  habitLog: number;
+  triggers: number;
+  sessions: number;
+  energy: number;
+  question: number;
+  rewards: number;
+}
+
+const EMPTY_STATS: ImportStats = {
+  habits: 0,
+  habitLog: 0,
+  triggers: 0,
+  sessions: 0,
+  energy: 0,
+  question: 0,
+  rewards: 0,
+};
+
+// Every mutation goes through withKeyLock, so an import has to hold *all* the
+// locks at once — otherwise a screen-time sync ticking a habit mid-import
+// writes into the list the import is about to replace.
+function withAllKeyLocks<T>(job: () => Promise<T>): Promise<T> {
+  const keys = Object.values(KEYS);
+  return keys.reduceRight<() => Promise<T>>(
+    (inner, key) => () => withKeyLock(key, inner),
+    job,
+  )();
+}
+
+/** Reads the whole local database. Nothing is filtered — this is the backup. */
+export async function exportData(): Promise<BackupData> {
+  await ensureSeeded();
+  const [habits, habitLog, triggers, energy, sessions, question, milestones, rewardOptions, rewards, limit] =
+    await Promise.all([
+      read<Habit[]>(KEYS.habits, []),
+      read<HabitLog[]>(KEYS.habitLog, []),
+      read<Trigger[]>(KEYS.triggers, []),
+      read<EnergyLog[]>(KEYS.energy, []),
+      read<FocusSession[]>(KEYS.sessions, []),
+      read<DailyQuestion[]>(KEYS.question, []),
+      read<number[]>(KEYS.milestones, []),
+      read<RewardOption[]>(KEYS.rewardOptions, []),
+      read<Reward[]>(KEYS.rewards, []),
+      read<number>(KEYS.screenTimeLimit, DEFAULT_SCREEN_TIME_LIMIT_MIN),
+    ]);
+  return {
+    habits: [...habits].sort((a, b) => a.sortOrder - b.sortOrder),
+    habitLog,
+    triggers,
+    energy,
+    sessions,
+    question,
+    milestones,
+    rewardOptions,
+    rewards,
+    screenTimeLimitMinutes: limit,
+  };
+}
+
+/** Throws away everything on the device and writes the backup in its place. */
+export async function replaceData(data: BackupData): Promise<ImportStats> {
+  return withAllKeyLocks(async () => {
+    await Promise.all([
+      write(KEYS.habits, data.habits),
+      write(KEYS.habitLog, data.habitLog),
+      write(KEYS.triggers, data.triggers),
+      write(KEYS.energy, data.energy),
+      write(KEYS.sessions, data.sessions),
+      write(KEYS.question, data.question),
+      write(KEYS.milestones, data.milestones),
+      write(KEYS.rewardOptions, data.rewardOptions),
+      write(KEYS.rewards, data.rewards),
+      write(KEYS.screenTimeLimit, data.screenTimeLimitMinutes),
+    ]);
+    return {
+      habits: data.habits.length,
+      habitLog: data.habitLog.length,
+      triggers: data.triggers.length,
+      sessions: data.sessions.length,
+      energy: data.energy.length,
+      question: data.question.length,
+      rewards: data.rewards.length,
+    };
+  });
+}
+
+/**
+ * Adds what the device doesn't have yet and leaves everything it does have
+ * untouched — importing twice changes nothing the second time.
+ *
+ * Habits/triggers/rewards are matched by *label*, not id: a fresh install
+ * seeds the same ten default habits with freshly generated ids, so matching
+ * by id alone would duplicate every one of them and strand the imported
+ * ticks on the copies. Log entries are re-pointed at the local ids through
+ * that mapping.
+ */
+export async function mergeData(data: BackupData): Promise<ImportStats> {
+  return withAllKeyLocks(async () => {
+    const stats: ImportStats = { ...EMPTY_STATS };
+
+    // --- habits, and the imported-id -> local-id map the logs need ---
+    const habits = await read<Habit[]>(KEYS.habits, []);
+    const localById = new Set(habits.map((h) => h.id));
+    const localByLabel = new Map(habits.map((h) => [h.label, h.id] as const));
+    const habitIdMap = new Map<string, string>();
+    let nextOrder = habits.reduce((max, h) => Math.max(max, h.sortOrder), -1) + 1;
+
+    for (const h of data.habits) {
+      if (localById.has(h.id)) {
+        habitIdMap.set(h.id, h.id);
+      } else if (localByLabel.has(h.label)) {
+        habitIdMap.set(h.id, localByLabel.get(h.label)!);
+      } else {
+        habits.push({ ...h, sortOrder: nextOrder++ });
+        localById.add(h.id);
+        localByLabel.set(h.label, h.id);
+        habitIdMap.set(h.id, h.id);
+        stats.habits++;
+      }
+    }
+    if (stats.habits > 0) await write(KEYS.habits, habits);
+
+    // --- habit log ---
+    const logs = await read<HabitLog[]>(KEYS.habitLog, []);
+    const seenLog = new Set(logs.map((l) => `${l.habitId}|${l.date}`));
+    const usedLogIds = new Set(logs.map((l) => l.id));
+    for (const l of data.habitLog) {
+      const habitId = habitIdMap.get(l.habitId);
+      if (!habitId) continue; // a tick for a habit the file itself doesn't carry
+      const key = `${habitId}|${l.date}`;
+      if (seenLog.has(key)) continue; // this device already has a verdict for that day
+      seenLog.add(key);
+      logs.push({ ...l, habitId, id: usedLogIds.has(l.id) ? uid() : l.id });
+      usedLogIds.add(l.id);
+      stats.habitLog++;
+    }
+    if (stats.habitLog > 0) await write(KEYS.habitLog, logs);
+
+    // --- triggers (label-matched, same reason as habits) ---
+    const triggers = await read<Trigger[]>(KEYS.triggers, []);
+    const triggerLabels = new Set(triggers.map((t) => t.label));
+    const triggerIds = new Set(triggers.map((t) => t.id));
+    for (const t of data.triggers) {
+      if (triggerIds.has(t.id) || triggerLabels.has(t.label)) continue;
+      triggers.push(t);
+      triggerLabels.add(t.label);
+      triggerIds.add(t.id);
+      stats.triggers++;
+    }
+    if (stats.triggers > 0) await write(KEYS.triggers, triggers);
+
+    // --- reward options (label-matched; not reported, they aren't history) ---
+    const options = await read<RewardOption[]>(KEYS.rewardOptions, []);
+    const optionLabels = new Set(options.map((o) => o.label));
+    let addedOptions = 0;
+    for (const o of data.rewardOptions) {
+      if (optionLabels.has(o.label)) continue;
+      options.push(o);
+      optionLabels.add(o.label);
+      addedOptions++;
+    }
+    if (addedOptions > 0) await write(KEYS.rewardOptions, options);
+
+    // --- focus sessions ---
+    const sessions = await read<FocusSession[]>(KEYS.sessions, []);
+    const sessionIds = new Set(sessions.map((s) => s.id));
+    for (const s of data.sessions) {
+      if (sessionIds.has(s.id)) continue;
+      sessions.push(s);
+      sessionIds.add(s.id);
+      stats.sessions++;
+    }
+    if (stats.sessions > 0) await write(KEYS.sessions, sessions);
+
+    // --- energy (one value per date+hour) ---
+    const energy = await read<EnergyLog[]>(KEYS.energy, []);
+    const seenEnergy = new Set(energy.map((e) => `${e.date}|${e.hour}`));
+    for (const e of data.energy) {
+      const key = `${e.date}|${e.hour}`;
+      if (seenEnergy.has(key)) continue;
+      seenEnergy.add(key);
+      energy.push(e);
+      stats.energy++;
+    }
+    if (stats.energy > 0) await write(KEYS.energy, energy);
+
+    // --- daily question (one per date) ---
+    const questions = await read<DailyQuestion[]>(KEYS.question, []);
+    const seenDates = new Set(questions.map((q) => q.date));
+    for (const q of data.question) {
+      if (seenDates.has(q.date)) continue;
+      seenDates.add(q.date);
+      questions.push(q);
+      stats.question++;
+    }
+    if (stats.question > 0) await write(KEYS.question, questions);
+
+    // --- rewards ---
+    const rewards = await read<Reward[]>(KEYS.rewards, []);
+    const rewardIds = new Set(rewards.map((r) => r.id));
+    for (const r of data.rewards) {
+      if (rewardIds.has(r.id)) continue;
+      rewards.push(r);
+      rewardIds.add(r.id);
+      stats.rewards++;
+    }
+    if (stats.rewards > 0) await write(KEYS.rewards, rewards);
+
+    // --- celebrated milestones: union, so a milestone isn't re-celebrated ---
+    const milestones = await read<number[]>(KEYS.milestones, []);
+    const merged = [...new Set([...milestones, ...data.milestones])].sort((a, b) => a - b);
+    if (merged.length !== milestones.length) await write(KEYS.milestones, merged);
+
+    // The screen-time limit is a setting of *this* phone, not history — merging
+    // deliberately leaves it alone.
+    return stats;
+  });
+}

@@ -38,3 +38,15 @@ export function weekdayLabel(dateKey: string): string {
   const [y, m, d] = dateKey.split("-").map(Number);
   return WEEKDAY_LABELS[new Date(y, m - 1, d).getDay()];
 }
+
+/**
+ * "01.09.2026" from a date key or a full ISO timestamp. Written out by hand
+ * rather than via toLocaleDateString: Intl is not guaranteed to carry the ru
+ * locale in every Hermes build, and a silent fallback to US ordering would put
+ * the month where the day should be.
+ */
+export function formatDateShort(value: string): string {
+  const local = value.includes("T") ? toDateKey(new Date(value)) : value;
+  const [y, m, d] = local.split("-");
+  return y && m && d ? `${d}.${m}.${y}` : local;
+}

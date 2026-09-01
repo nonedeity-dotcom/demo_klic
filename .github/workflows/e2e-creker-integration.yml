@@ -164,9 +164,10 @@ jobs:
             echo "=== adb shell content query (broad shell visibility) ===" && adb shell content query --uri content://com.creker.screentime.provider/device_usage --bind 0:s:$(date -u +%F) --bind 1:s:$(date -u +%F)
             curl -Ls "https://get.maestro.mobile.dev" | bash
             (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml)
+            (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/data-backup.yaml)
             adb logcat -d > logcat.txt
 
-      - name: Locate Maestro screenshot
+      - name: Locate Maestro screenshots
         if: always()
         run: |
           # Confirmed by log: Maestro logged "Take screenshot today... COMPLETED"
@@ -174,10 +175,12 @@ jobs:
           # ~/.maestro/tests/<run-timestamp>/ (nested deeper than 4, unlike the
           # top-level debug dir Maestro prints on a failed assertion), so this
           # widens the search instead of guessing a fixed depth.
-          SHOT=$(find "$HOME" . -iname "today.png" 2>/dev/null | head -n 1)
-          echo "Found screenshot: $SHOT"
           find "$HOME/.maestro" -iname "*.png" 2>/dev/null || true
-          [ -n "$SHOT" ] && cp "$SHOT" ./today-screenshot.png || true
+          for NAME in today backup backup-share-sheet; do
+            SHOT=$(find "$HOME" . -iname "$NAME.png" 2>/dev/null | head -n 1)
+            echo "Found $NAME: $SHOT"
+            [ -n "$SHOT" ] && cp "$SHOT" "./$NAME-screenshot.png" || true
+          done
 
       - name: Upload results
         if: always()
@@ -185,7 +188,7 @@ jobs:
         with:
           name: e2e-results
           path: |
-            today-screenshot.png
+            *-screenshot.png
             logcat.txt
             creker/app/build/reports/androidTests/connected/**
           if-no-files-found: warn
@@ -206,7 +209,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git checkout --orphan e2e-results
           git rm -rf . >/dev/null 2>&1 || true
-          [ -f ../today-screenshot.png ] && cp ../today-screenshot.png today-screenshot.png
+          cp ../*-screenshot.png . 2>/dev/null || true
           [ -f ../logcat.txt ] && cp ../logcat.txt logcat.txt
           git add -A
           git commit -m "e2e: results from run ${{ github.run_id }}"
