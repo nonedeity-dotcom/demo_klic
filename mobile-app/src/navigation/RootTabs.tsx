@@ -14,6 +14,7 @@ import ReportScreen from "../screens/ReportScreen";
 import ReminderScreen from "../screens/ReminderScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import LibraryScreen from "../screens/LibraryScreen";
+import ReviewScreen from "../screens/ReviewScreen";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -99,6 +100,7 @@ export default function RootTabs() {
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: "Настройки" }} />
         <Stack.Screen name="Library" component={LibraryScreen} options={{ title: "Подсказки" }} />
         <Stack.Screen name="Reminder" component={ReminderScreen} options={{ title: "Напоминание" }} />
+        <Stack.Screen name="Review" component={ReviewScreen} options={{ title: "Сверка за неделю" }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

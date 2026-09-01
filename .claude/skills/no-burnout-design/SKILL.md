@@ -52,6 +52,8 @@ Pushed on top of the tabs, from the gear in the header:
 - **LibraryScreen** — the full tip reference, four collapsible sections
 - **ReminderScreen** — notification access, 1-5 reminders a day, one time
   picker per slot
+- **ReviewScreen** — the weekly review (what worked / didn't / changing),
+  one entry per ISO week, prompted from the report
 
 Do not add a seventh tab: seven labels only fit at 8pt on a 320px screen and
 an eighth does not fit at all. Anything new that isn't a daily action belongs

@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
-import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, STREAK_MILESTONES } from "../api/client";
 import { colors } from "../theme/colors";
 import { dateNDaysAgo, weekdayLabel } from "../lib/date";
 import { plural } from "../lib/plural";
 import { useTodayKey } from "../lib/useTodayKey";
+import { weekKey, dayOfWeek } from "../lib/week";
 import TwoCurves from "../components/TwoCurves";
 import RotatingTip from "../components/RotatingTip";
 import HabitPhase from "../components/HabitPhase";
-import type { Habit, HabitLog, FocusSession } from "../types";
+import type { Habit, HabitLog, FocusSession, WeeklyReview } from "../types";
 
-export default function ReportScreen() {
+export default function ReportScreen({ navigation }: { navigation: { navigate: (screen: string) => void } }) {
   const qc = useQueryClient();
   // Re-renders when the local day turns over, so a report left open overnight
   // rolls onto the new week instead of freezing on yesterday.
@@ -35,6 +36,10 @@ export default function ReportScreen() {
     queryKey: ["sessions", "week", weekStart, today],
     queryFn: () => api.getSessions(weekStart, today) as Promise<FocusSession[]>,
   });
+  const { data: reviews = [] } = useQuery<WeeklyReview[]>({
+    queryKey: ["reviews"],
+    queryFn: () => api.getReviews(),
+  });
   const { data: celebrated = [] } = useQuery<number[]>({
     queryKey: ["milestones"],
     queryFn: () => api.getCelebratedMilestones(),
@@ -50,6 +55,10 @@ export default function ReportScreen() {
 
   const doneByDay = (day: string) => logs.filter((l) => l.date === day && countsFor(l)).length;
   const minimalCount = logs.filter((l) => countsFor(l) && l.minimal).length;
+
+  const reviewWritten = reviews.some((r) => r.week === weekKey(today));
+  // Friday onwards: earlier in the week there is not much of a week to review.
+  const reviewDue = !reviewWritten && dayOfWeek(today) >= 5;
   const sessionsByDay = (day: string) => sessions.filter((s) => s.date === day).length;
 
   // How many habits a day needs to "count". With no habits at all there is
@@ -170,6 +179,27 @@ export default function ReportScreen() {
         })}
       </View>
 
+      {/* Prompted rather than hidden in settings — a review nobody is reminded
+          of is a review nobody writes. It nags only from Friday, and only
+          until this week's is written. */}
+      <Pressable
+        onPress={() => navigation.navigate("Review")}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.reviewRow, reviewDue && styles.reviewRowDue, pressed && { opacity: 0.7 }]}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.reviewLabel, reviewDue && { color: colors.accent }]}>
+            {reviewDue ? "Пора на сверку за неделю" : "Сверка за неделю"}
+          </Text>
+          <Text style={styles.reviewHint}>
+            {reviewWritten
+              ? "На этой неделе записана — можно дописать"
+              : "Что работало, что нет, что меняешь. Раз в неделю, на холодную голову."}
+          </Text>
+        </View>
+        <Text style={styles.reviewChevron}>›</Text>
+      </Pressable>
+
       {minimalCount > 0 && (
         <Text style={styles.minimalNote}>
           Из них {minimalCount} {plural(minimalCount, ["отметка", "отметки", "отметок"])} по минимуму — день
@@ -237,4 +267,18 @@ const styles = StyleSheet.create({
   bar: { width: "100%", borderRadius: 4 },
   barLabel: { color: colors.textMuted, fontSize: 10 },
   minimalNote: { color: colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: -14, marginBottom: 20 },
+  reviewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 24,
+  },
+  reviewRowDue: { borderWidth: 1, borderColor: colors.accent },
+  reviewLabel: { color: colors.text, fontSize: 14, fontWeight: "600" },
+  reviewHint: { color: colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  reviewChevron: { color: colors.textMuted, fontSize: 20 },
 });

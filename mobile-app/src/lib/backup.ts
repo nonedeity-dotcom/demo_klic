@@ -15,7 +15,17 @@ import {
   type ReminderSettings,
 } from "../notifications/reminders";
 import { toDateKey } from "./date";
-import type { Habit, HabitLog, Trigger, EnergyLog, FocusSession, DailyQuestion, RewardOption, Reward } from "../types";
+import type {
+  Habit,
+  HabitLog,
+  Trigger,
+  EnergyLog,
+  FocusSession,
+  DailyQuestion,
+  RewardOption,
+  Reward,
+  WeeklyReview,
+} from "../types";
 
 /** Marks the file as ours, so a random .json picked by mistake is rejected. */
 const APP_ID = "no-burnout";
@@ -138,6 +148,18 @@ function parseData(raw: unknown): BackupData {
     isStr(r.id) && isDateKey(r.date) && isStr(r.text) ? { id: r.id, date: r.date, text: r.text } : null,
   );
 
+  const reviews = pickValid<WeeklyReview>(d.reviews, (r) =>
+    isStr(r.week) && isDateKey(r.date)
+      ? {
+          week: r.week,
+          date: r.date,
+          worked: isStr(r.worked) ? r.worked : "",
+          didnt: isStr(r.didnt) ? r.didnt : "",
+          change: isStr(r.change) ? r.change : "",
+        }
+      : null,
+  );
+
   const milestones = list(d.milestones).filter(isNum);
 
   const limit = isNum(d.screenTimeLimitMinutes) && d.screenTimeLimitMinutes > 0 ? d.screenTimeLimitMinutes : 180;
@@ -160,6 +182,7 @@ function parseData(raw: unknown): BackupData {
     milestones,
     rewardOptions,
     rewards,
+    reviews,
     screenTimeLimitMinutes: limit,
     focusIntervals,
   };
@@ -202,7 +225,8 @@ export function parseBackupText(text: string): ParsedBackup {
     data.sessions.length === 0 &&
     data.energy.length === 0 &&
     data.question.length === 0 &&
-    data.rewards.length === 0;
+    data.rewards.length === 0 &&
+    data.reviews.length === 0;
   if (isEmpty) throw new BackupError("В файле нет данных, которые можно перенести.");
 
   return { data, reminder: parseReminder(raw.reminder), exportedAt: isStr(raw.exportedAt) ? raw.exportedAt : null };

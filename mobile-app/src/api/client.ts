@@ -1,5 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { Habit, HabitLog, Trigger, EnergyLog, FocusSession, DailyQuestion, RewardOption, Reward } from "../types";
+import type {
+  Habit,
+  HabitLog,
+  Trigger,
+  EnergyLog,
+  FocusSession,
+  DailyQuestion,
+  RewardOption,
+  Reward,
+  WeeklyReview,
+} from "../types";
 
 // Local-only storage: no account, no server. Everything lives in
 // AsyncStorage on this device — same idea as the original demo's
@@ -19,6 +29,7 @@ const KEYS = {
   screenTimeLimit: "screen-time-limit-minutes-v1",
   tipCursor: "tip-cursor-v1",
   focusIntervals: "focus-intervals-v1",
+  reviews: "weekly-reviews-v1",
 };
 
 export interface FocusIntervals {
@@ -283,6 +294,25 @@ export const api = {
     });
   },
 
+  async getReviews(): Promise<WeeklyReview[]> {
+    const reviews = await read<WeeklyReview[]>(KEYS.reviews, []);
+    // Newest first: the history list reads top-down and the current week is
+    // the one you care about.
+    return [...reviews].sort((a, b) => (a.week < b.week ? 1 : a.week > b.week ? -1 : 0));
+  },
+  /** One review per ISO week — writing again replaces that week's entry. */
+  async saveReview(review: WeeklyReview): Promise<WeeklyReview> {
+    return withKeyLock(KEYS.reviews, async () => {
+      const reviews = await read<WeeklyReview[]>(KEYS.reviews, []);
+      const existing = reviews.find((r) => r.week === review.week);
+      await write(
+        KEYS.reviews,
+        existing ? reviews.map((r) => (r === existing ? review : r)) : [...reviews, review],
+      );
+      return review;
+    });
+  },
+
   async getCelebratedMilestones(): Promise<number[]> {
     return read(KEYS.milestones, []);
   },
@@ -410,6 +440,7 @@ export interface BackupData {
   milestones: number[];
   rewardOptions: RewardOption[];
   rewards: Reward[];
+  reviews: WeeklyReview[];
   screenTimeLimitMinutes: number;
   focusIntervals: FocusIntervals;
 }
@@ -423,6 +454,7 @@ export interface ImportStats {
   energy: number;
   question: number;
   rewards: number;
+  reviews: number;
 }
 
 const EMPTY_STATS: ImportStats = {
@@ -433,6 +465,7 @@ const EMPTY_STATS: ImportStats = {
   energy: 0,
   question: 0,
   rewards: 0,
+  reviews: 0,
 };
 
 // Every mutation goes through withKeyLock, so an import has to hold *all* the
@@ -449,7 +482,7 @@ function withAllKeyLocks<T>(job: () => Promise<T>): Promise<T> {
 /** Reads the whole local database. Nothing is filtered — this is the backup. */
 export async function exportData(): Promise<BackupData> {
   await ensureSeeded();
-  const [habits, habitLog, triggers, energy, sessions, question, milestones, rewardOptions, rewards, limit, focusIntervals] =
+  const [habits, habitLog, triggers, energy, sessions, question, milestones, rewardOptions, rewards, reviews, limit, focusIntervals] =
     await Promise.all([
       read<Habit[]>(KEYS.habits, []),
       read<HabitLog[]>(KEYS.habitLog, []),
@@ -460,6 +493,7 @@ export async function exportData(): Promise<BackupData> {
       read<number[]>(KEYS.milestones, []),
       read<RewardOption[]>(KEYS.rewardOptions, []),
       read<Reward[]>(KEYS.rewards, []),
+      read<WeeklyReview[]>(KEYS.reviews, []),
       read<number>(KEYS.screenTimeLimit, DEFAULT_SCREEN_TIME_LIMIT_MIN),
       api.getFocusIntervals(),
     ]);
@@ -473,6 +507,7 @@ export async function exportData(): Promise<BackupData> {
     milestones,
     rewardOptions,
     rewards,
+    reviews,
     screenTimeLimitMinutes: limit,
     focusIntervals,
   };
@@ -491,6 +526,7 @@ export async function replaceData(data: BackupData): Promise<ImportStats> {
       write(KEYS.milestones, data.milestones),
       write(KEYS.rewardOptions, data.rewardOptions),
       write(KEYS.rewards, data.rewards),
+      write(KEYS.reviews, data.reviews),
       write(KEYS.screenTimeLimit, data.screenTimeLimitMinutes),
       write(KEYS.focusIntervals, data.focusIntervals),
     ]);
@@ -502,6 +538,7 @@ export async function replaceData(data: BackupData): Promise<ImportStats> {
       energy: data.energy.length,
       question: data.question.length,
       rewards: data.rewards.length,
+      reviews: data.reviews.length,
     };
   });
 }
@@ -627,6 +664,17 @@ export async function mergeData(data: BackupData): Promise<ImportStats> {
       stats.rewards++;
     }
     if (stats.rewards > 0) await write(KEYS.rewards, rewards);
+
+    // --- weekly reviews (one per ISO week) ---
+    const reviews = await read<WeeklyReview[]>(KEYS.reviews, []);
+    const seenWeeks = new Set(reviews.map((r) => r.week));
+    for (const r of data.reviews) {
+      if (seenWeeks.has(r.week)) continue;
+      seenWeeks.add(r.week);
+      reviews.push(r);
+      stats.reviews++;
+    }
+    if (stats.reviews > 0) await write(KEYS.reviews, reviews);
 
     // --- celebrated milestones: union, so a milestone isn't re-celebrated ---
     const milestones = await read<number[]>(KEYS.milestones, []);
