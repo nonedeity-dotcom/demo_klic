@@ -153,6 +153,13 @@ jobs:
           # with plain `adb install` (persists), then running only the one
           # test class directly via `am instrument` — which does not
           # uninstall anything afterward.
+          #
+          # Each Maestro flow records its failure to a .status file instead
+          # of aborting the step: `adb logcat -d` is the next line, and when
+          # a flow aborted the step directly (run 26) the emulator was killed
+          # before logcat was ever dumped — leaving the one failure with no
+          # device log to diagnose it from. The last line re-raises the
+          # failure once the log has been captured.
           script: |
             chmod +x creker/gradlew
             (cd creker && ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon)
@@ -163,9 +170,10 @@ jobs:
             echo "=== pm list packages (creker/noburnout) ===" && adb shell pm list packages | grep -E "creker|noburnout"
             echo "=== adb shell content query (broad shell visibility) ===" && adb shell content query --uri content://com.creker.screentime.provider/device_usage --bind 0:s:$(date -u +%F) --bind 1:s:$(date -u +%F)
             curl -Ls "https://get.maestro.mobile.dev" | bash
-            (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml)
-            (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/data-backup.yaml)
+            (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml) || echo "screentime-integration FAILED" > flow-screentime.status
+            (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/data-backup.yaml) || echo "data-backup FAILED" > flow-backup.status
             adb logcat -d > logcat.txt
+            cat flow-screentime.status flow-backup.status 2>/dev/null; [ ! -s flow-screentime.status ] && [ ! -s flow-backup.status ]
 
       - name: Locate Maestro screenshots
         if: always()
@@ -182,6 +190,19 @@ jobs:
             [ -n "$SHOT" ] && cp "$SHOT" "./$NAME-screenshot.png" || true
           done
 
+          # On a failed assertion Maestro also saves a screenshot of what was
+          # actually on screen at that moment (screenshots/step-NNN-*.png).
+          # Run 26's failure could not be diagnosed without it, so every png
+          # under the run dir is published, named <flow>-<file> and stripped
+          # of the non-ASCII characters Maestro takes from the assertion text.
+          mkdir -p shots
+          find "$HOME/.maestro/tests" -iname "*.png" 2>/dev/null | while read -r P; do
+            FLOW=$(basename "$(dirname "$(dirname "$P")")")
+            SAFE=$(printf '%s-%s' "$FLOW" "$(basename "$P")" | tr -c 'A-Za-z0-9._-' '_')
+            cp "$P" "shots/$SAFE"
+          done
+          ls -la shots || true
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -189,6 +210,7 @@ jobs:
           name: e2e-results
           path: |
             *-screenshot.png
+            shots/**
             logcat.txt
             creker/app/build/reports/androidTests/connected/**
           if-no-files-found: warn
@@ -210,7 +232,8 @@ jobs:
           git checkout --orphan e2e-results
           git rm -rf . >/dev/null 2>&1 || true
           cp ../*-screenshot.png . 2>/dev/null || true
-          [ -f ../logcat.txt ] && cp ../logcat.txt logcat.txt
+          [ -d ../shots ] && cp -r ../shots shots || true
+          [ -f ../logcat.txt ] && cp ../logcat.txt logcat.txt || true
           git add -A
           git commit -m "e2e: results from run ${{ github.run_id }}"
           git push -f origin e2e-results

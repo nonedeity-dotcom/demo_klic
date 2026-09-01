@@ -5,6 +5,16 @@
 # note only renders after writeAsStringAsync AND shareAsync have both
 # resolved, so seeing it proves the native write and the share sheet
 # actually worked, not just that the buttons rendered.
+#
+# Run 26 failed here, and the share-sheet screenshot showed why the flow
+# itself was at fault: taken ~1s after the tap it still showed the button
+# mid-"Сохраняю…", i.e. the share sheet had not come up yet — and Back was
+# pressed a second later, before there was a sheet to dismiss. So this now
+# waits for the screen to settle first, and comes back to Отчёт explicitly
+# afterwards, since Back in a bottom-tab navigator can also pop to the
+# first tab. Whether that timing was the *only* problem is not yet known:
+# the workflow now publishes Maestro's own failure screenshots so the next
+# run shows what is actually on screen instead of leaving it to guesswork.
 appId: com.yourcompany.noburnout
 ---
 - launchApp
@@ -18,9 +28,18 @@ appId: com.yourcompany.noburnout
 - assertVisible: "Скачать данные"
 - assertVisible: "Загрузить из файла"
 - tapOn: "Скачать данные"
+# Writing the file and launching the chooser takes longer than the implicit
+# wait after a tap.
+- waitForAnimationToEnd:
+    timeout: 15000
 - takeScreenshot: backup-share-sheet
 # Dismisses the system share sheet; shareAsync resolves on dismissal and the
 # app then renders its confirmation.
 - pressKey: Back
-- assertVisible: "Файл no-burnout-.*\\.json.*"
+- waitForAnimationToEnd:
+    timeout: 10000
+- tapOn: "Отчёт"
+- extendedWaitUntil:
+    visible: "Файл no-burnout-.*\\.json.*"
+    timeout: 20000
 - takeScreenshot: backup
