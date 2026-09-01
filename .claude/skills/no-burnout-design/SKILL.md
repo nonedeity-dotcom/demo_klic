@@ -36,8 +36,9 @@ reserved for focus-session data).
 
 Bottom bar, in order:
 
-1. **ReportScreen** — rotating tip, streak + which phase that streak means,
-   7-day bar charts. Opens first.
+1. **ReportScreen** — rotating tip, one streak card (ring to the next
+   milestone + phase), a four-week grid, the bar to 66 days, focus sessions,
+   the weekly review row. Opens first.
 2. **TodayScreen** — habit checklist for today, each habit optionally
    carrying a declared minimal version that can be ticked instead
 3. **FocusScreen** — focus timer (SVG ring) with editable work/break lengths
@@ -73,6 +74,19 @@ A tip is a one-line `short`, a `full` paragraph revealed on tap, an optional
 and a `rotate` flag deciding whether it joins the rotation. Render every tip
 through `src/components/TipCard.tsx` so the reference and the rotating tip
 stay visually identical.
+
+## One idea, one block
+
+The report used to say the same thing three times in a row — milestone dots,
+"N из M дней до вехи", and a phase card. `StreakRing` is the single block
+that answers "where am I"; `MonthGrid` is the single block that answers "how
+has it been going". Before adding a fourth progress indicator, check it isn't
+a redraw of one of those two. The bar to 66 days is only rendered while the
+ring is aimed at something nearer, for exactly that reason.
+
+Explanatory art belongs with the idea it explains, not on a data screen:
+`TwoCurves` lives in the tip about the two kinds of dopamine, via the tip's
+`illustration` field.
 
 ## Saying what the system did, not what was asked
 

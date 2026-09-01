@@ -30,6 +30,8 @@ export interface Tip {
   full: string;
   /** Honest note where the source is shakier than it sounds. */
   caveat?: string;
+  /** Optional drawing shown with the expanded text. */
+  illustration?: "two-curves";
   /**
    * Whether this takes part in the rotation shown on the report screen.
    * Explanations of a model ("what the dip is") are worth reading once and
@@ -163,6 +165,9 @@ export const TIPS: Tip[] = [
       "Лента, игры, фастфуд, шопинг дают резкий подъём и такое же резкое падение — и следующие несколько часов включиться во что-то обычное трудно. Спорт, прогулка, работа, тишина дают подъём поменьше, но и спад мягче, и состояние ровнее.",
     caveat:
       "Деление на «искусственный» и «настоящий» дофамин — популярное упрощение, а не строгая наука. Практический вывод при этом сходится с опытом: после ленты работать тяжелее, чем после прогулки.",
+    // The two curves used to open the report screen, where they illustrated
+    // nothing about your own data. Here they sit next to the idea they draw.
+    illustration: "two-curves",
     rotate: false,
   },
   {

@@ -1,6 +1,7 @@
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
+import TwoCurves from "./TwoCurves";
 import type { Tip } from "../content/library";
 
 /**
@@ -45,6 +46,11 @@ export default function TipCard({
           <Text style={styles.full}>{tip.full}</Text>
           {/* Where a source states its author's opinion as fact, the tip says
               so rather than letting the app vouch for it. */}
+          {tip.illustration === "two-curves" && (
+            <View style={styles.illustration}>
+              <TwoCurves />
+            </View>
+          )}
           {tip.caveat && <Text style={styles.caveat}>{tip.caveat}</Text>}
         </>
       )}
@@ -72,6 +78,7 @@ const styles = StyleSheet.create({
   short: { color: colors.text, fontSize: 14, lineHeight: 19, flex: 1 },
   chevron: { marginTop: 2 },
   full: { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginTop: 10 },
+  illustration: { alignItems: "center", marginTop: 12 },
   caveat: {
     color: colors.accent,
     fontSize: 11,

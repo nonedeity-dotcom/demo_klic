@@ -11,7 +11,7 @@
  * it runs on its own — it never gives exact cut-offs, and the copy below
  * doesn't pretend otherwise.
  */
-export type PhaseId = "broken" | "honeymoon" | "dip" | "plateau";
+export type PhaseId = "empty" | "broken" | "honeymoon" | "dip" | "plateau";
 
 export interface Phase {
   id: PhaseId;
@@ -21,7 +21,17 @@ export interface Phase {
   tone: "warm" | "steady";
 }
 
-export function phaseFor(streak: number): Phase {
+export function phaseFor(streak: number, hasHistory = true): Phase {
+  // A fresh install and a chain you just broke are not the same thing, and
+  // "начать заново" is a strange thing to say to someone who never started.
+  if (streak <= 0 && !hasHistory) {
+    return {
+      id: "empty",
+      title: "Пока пусто",
+      body: "Отметь первую привычку — здесь появится цепочка дней и то, на какой ты фазе.",
+      tone: "warm",
+    };
+  }
   if (streak <= 0) {
     return {
       id: "broken",
@@ -59,6 +69,7 @@ export function phaseFor(streak: number): Phase {
 
 /** Rough day boundaries, shown so the numbers aren't presented as exact. */
 export const PHASE_RANGE: Record<PhaseId, string> = {
+  empty: "",
   broken: "",
   honeymoon: "примерно 1–3 день",
   dip: "примерно 4–21 день",
