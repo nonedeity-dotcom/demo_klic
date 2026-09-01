@@ -1,26 +1,44 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, TextInput, Modal, AppState, StyleSheet } from "react-native";
+import { View, Text, Pressable, TextInput, Modal, AppState, ScrollView, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Feather } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../api/client";
+import { api, DEFAULT_FOCUS_INTERVALS, type FocusIntervals } from "../api/client";
 import { colors } from "../theme/colors";
 import { todayKey } from "../lib/date";
 import type { RewardOption } from "../types";
 
-const WORK_MIN = 50;
-const BREAK_MIN = 10;
 const SIZE = 220;
 const STROKE = 6;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
 
+// The ratios the source material and its usual variants use. Anything else is
+// still reachable with the steppers.
+const PRESETS: FocusIntervals[] = [
+  { workMin: 25, breakMin: 5 },
+  { workMin: 50, breakMin: 10 },
+  { workMin: 60, breakMin: 20 },
+  { workMin: 90, breakMin: 20 },
+];
+
 export default function FocusScreen() {
   const qc = useQueryClient();
   const [mode, setMode] = useState<"work" | "break">("work");
-  const workMin = WORK_MIN;
-  const breakMin = BREAK_MIN;
-  const [secondsLeft, setSecondsLeft] = useState(WORK_MIN * 60);
+  // The lengths are a saved setting now, not constants. Until the stored value
+  // arrives the defaults stand in, and the idle timer is re-seeded from it —
+  // see the effect below.
+  const { data: intervals = DEFAULT_FOCUS_INTERVALS } = useQuery<FocusIntervals>({
+    queryKey: ["focusIntervals"],
+    queryFn: () => api.getFocusIntervals(),
+  });
+  const workMin = intervals.workMin;
+  const breakMin = intervals.breakMin;
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<FocusIntervals>(DEFAULT_FOCUS_INTERVALS);
+
+  const [secondsLeft, setSecondsLeft] = useState(DEFAULT_FOCUS_INTERVALS.workMin * 60);
   const [running, setRunning] = useState(false);
   // The timer is driven by a wall-clock deadline, not by counting ticks.
   // setInterval only fires while JS is running, so the old version froze the
@@ -64,6 +82,28 @@ export default function FocusScreen() {
     onSuccess: invalidateOptions,
   });
 
+  const saveIntervals = useMutation({
+    mutationFn: (next: FocusIntervals) => api.setFocusIntervals(next),
+    onSuccess: (applied) => {
+      qc.setQueryData(["focusIntervals"], applied);
+      setEditing(false);
+    },
+  });
+
+  // True from the moment a phase is started until it ends or is reset. Pause
+  // also sets `running` to false, so re-seeding on `!running` alone would wipe
+  // a paused session the moment the stored lengths loaded.
+  const startedRef = useRef(false);
+
+  // An untouched timer should show the length that is actually saved —
+  // including right after the stored value first loads, and right after it is
+  // changed. A session in progress is left alone: silently retargeting it
+  // would either cut it short or extend it without asking.
+  useEffect(() => {
+    if (running || startedRef.current) return;
+    setSecondsLeft((mode === "work" ? workMin : breakMin) * 60);
+  }, [workMin, breakMin, mode, running]);
+
   // Guards against the phase flipping twice: the old code called this from
   // inside a setSecondsLeft updater, and React may run an updater more than
   // once — which logged the same focus session twice and reopened the modal.
@@ -75,6 +115,7 @@ export default function FocusScreen() {
 
     deadlineRef.current = null;
     setRunning(false);
+    startedRef.current = false;
     if (mode === "work") {
       logSession.mutate(workMin);
       setMode("break");
@@ -150,6 +191,7 @@ export default function FocusScreen() {
     } else {
       if (secondsLeft <= 0) return;
       deadlineRef.current = Date.now() + secondsLeft * 1000;
+      startedRef.current = true;
       setRunning(true);
     }
   };
@@ -157,6 +199,7 @@ export default function FocusScreen() {
   const resetTimer = () => {
     deadlineRef.current = null;
     setRunning(false);
+    startedRef.current = false;
     setMode("work");
     setSecondsLeft(workMin * 60);
     // A reward prompt left open from the session that just ended shouldn't
@@ -164,8 +207,20 @@ export default function FocusScreen() {
     setShowReward(false);
   };
 
+  const openEditor = () => {
+    setDraft(intervals);
+    setEditing(true);
+  };
+  const bumpDraft = (field: keyof FocusIntervals, delta: number) =>
+    setDraft((d) => ({ ...d, [field]: Math.min(240, Math.max(1, d[field] + delta)) }));
+  const draftUnchanged = draft.workMin === workMin && draft.breakMin === breakMin;
+
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.subtle}>{mode === "work" ? "Погружение" : "Офлайн-прогресс"}</Text>
       <View style={{ height: 24 }} />
       <View style={{ width: SIZE, height: SIZE }}>
@@ -205,6 +260,96 @@ export default function FocusScreen() {
       </View>
 
       <Text style={styles.footnote}>Во время перерыва — без телефона: прогулка, чай, свежий воздух.</Text>
+
+      {/* The lengths used to be constants in this file. Editing is folded away
+          by default so the screen stays a timer rather than a settings page. */}
+      {!editing ? (
+        <Pressable
+          onPress={openEditor}
+          accessibilityRole="button"
+          accessibilityLabel="Изменить длительность работы и перерыва"
+          style={({ pressed }) => [styles.intervalSummary, pressed && styles.dimmed]}
+        >
+          <Text style={styles.intervalSummaryText}>
+            {workMin} мин работы · {breakMin} мин перерыва
+          </Text>
+          <Feather name="edit-2" size={14} color={colors.textMuted} />
+        </Pressable>
+      ) : (
+        <View style={styles.editorCard}>
+          <Text style={styles.editorLabel}>Длительность</Text>
+
+          <View style={styles.presetRow}>
+            {PRESETS.map((p) => {
+              const active = draft.workMin === p.workMin && draft.breakMin === p.breakMin;
+              return (
+                <Pressable
+                  key={`${p.workMin}-${p.breakMin}`}
+                  onPress={() => setDraft(p)}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [styles.preset, active && styles.presetActive, pressed && styles.dimmed]}
+                >
+                  <Text style={[styles.presetText, active && styles.presetTextActive]}>
+                    {p.workMin}/{p.breakMin}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {([
+            ["workMin", "Работа", 5],
+            ["breakMin", "Перерыв", 5],
+          ] as const).map(([field, label, step]) => (
+            <View key={field} style={styles.editorRow}>
+              <Text style={styles.editorRowLabel}>{label}</Text>
+              <View style={styles.editorStepper}>
+                <Pressable
+                  onPress={() => bumpDraft(field, -step)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${label}: минус ${step} минут`}
+                  style={({ pressed }) => [styles.smallBtn, pressed && styles.dimmed]}
+                >
+                  <Text style={styles.smallBtnText}>−</Text>
+                </Pressable>
+                <Text style={styles.editorValue}>{draft[field]} мин</Text>
+                <Pressable
+                  onPress={() => bumpDraft(field, step)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${label}: плюс ${step} минут`}
+                  style={({ pressed }) => [styles.smallBtn, pressed && styles.dimmed]}
+                >
+                  <Text style={styles.smallBtnText}>+</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+
+          {startedRef.current && !draftUnchanged && (
+            <Text style={styles.editorNote}>
+              Отрезок уже идёт — новая длительность применится со следующего.
+            </Text>
+          )}
+
+          <View style={styles.editorButtons}>
+            <Pressable
+              onPress={() => setEditing(false)}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.editorCancel, pressed && styles.dimmed]}
+            >
+              <Text style={styles.editorCancelText}>Отмена</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => saveIntervals.mutate(draft)}
+              disabled={saveIntervals.isPending}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.editorSave, pressed && styles.dimmed]}
+            >
+              <Text style={styles.editorSaveText}>Сохранить</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       <Modal visible={showReward} transparent animationType="fade" onRequestClose={() => setShowReward(false)}>
         <View style={styles.modalBackdrop}>
@@ -280,12 +425,13 @@ export default function FocusScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg, alignItems: "center", paddingTop: 60, paddingHorizontal: 24 },
+  container: { flex: 1, backgroundColor: colors.bg },
+  content: { alignItems: "center", paddingTop: 40, paddingHorizontal: 24, paddingBottom: 40 },
   subtle: { color: colors.textMuted, fontSize: 13 },
   timerText: { color: colors.text, fontSize: 40, fontWeight: "700", fontVariant: ["tabular-nums"] },
   timerLabel: { color: colors.textMuted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", marginTop: 4 },
@@ -294,6 +440,75 @@ const styles = StyleSheet.create({
   secondaryBtn: { backgroundColor: colors.card, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
   secondaryBtnText: { color: colors.textMuted, fontWeight: "600", fontSize: 14 },
   footnote: { color: colors.textMuted, fontSize: 12, textAlign: "center", marginTop: 24, maxWidth: 260 },
+  dimmed: { opacity: 0.65 },
+
+  intervalSummary: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+  },
+  intervalSummaryText: { color: colors.textMuted, fontSize: 12 },
+  editorCard: {
+    alignSelf: "stretch",
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 24,
+    gap: 12,
+  },
+  editorLabel: { color: colors.textMuted, fontSize: 12 },
+  presetRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  preset: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  presetActive: { backgroundColor: "rgba(143,184,154,0.12)", borderColor: colors.accentGreen },
+  presetText: { color: colors.textMuted, fontSize: 13, fontVariant: ["tabular-nums"] },
+  presetTextActive: { color: colors.accentGreen, fontWeight: "600" },
+  editorRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  editorRowLabel: { color: colors.text, fontSize: 14 },
+  editorStepper: { flexDirection: "row", alignItems: "center", gap: 12 },
+  smallBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.bg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  smallBtnText: { color: colors.text, fontSize: 17, fontWeight: "600" },
+  editorValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+    minWidth: 60,
+    textAlign: "center",
+  },
+  editorNote: { color: colors.accent, fontSize: 11, lineHeight: 16 },
+  editorButtons: { flexDirection: "row", gap: 10, marginTop: 2 },
+  editorCancel: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: "center",
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  editorCancelText: { color: colors.textMuted, fontSize: 13, fontWeight: "500" },
+  editorSave: { flex: 1, borderRadius: 12, paddingVertical: 11, alignItems: "center", backgroundColor: colors.accent },
+  editorSaveText: { color: colors.bg, fontSize: 13, fontWeight: "600" },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 },
   modalCard: { backgroundColor: colors.card, borderRadius: 20, padding: 20 },

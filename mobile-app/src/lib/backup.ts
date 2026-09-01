@@ -1,12 +1,19 @@
 import {
   BACKUP_FORMAT_VERSION,
+  DEFAULT_FOCUS_INTERVALS,
   exportData,
   mergeData,
   replaceData,
   type BackupData,
+  type FocusIntervals,
   type ImportStats,
 } from "../api/client";
-import { getReminderSettings, setReminderSettings, type ReminderSettings } from "../notifications/reminders";
+import {
+  getReminderSettings,
+  normalizeSettings,
+  setReminderSettings,
+  type ReminderSettings,
+} from "../notifications/reminders";
 import { toDateKey } from "./date";
 import type { Habit, HabitLog, Trigger, EnergyLog, FocusSession, DailyQuestion, RewardOption, Reward } from "../types";
 
@@ -128,15 +135,36 @@ function parseData(raw: unknown): BackupData {
 
   const limit = isNum(d.screenTimeLimitMinutes) && d.screenTimeLimitMinutes > 0 ? d.screenTimeLimitMinutes : 180;
 
-  return { habits, habitLog, triggers, energy, sessions, question, milestones, rewardOptions, rewards, screenTimeLimitMinutes: limit };
+  // Bad values are dropped rather than clamped here — client.setFocusIntervals
+  // clamps again on write, so a garbage pair can't reach the timer either way.
+  const fi = isObj(d.focusIntervals) ? d.focusIntervals : {};
+  const focusIntervals: FocusIntervals = {
+    workMin: isNum(fi.workMin) && fi.workMin > 0 ? Math.round(fi.workMin) : DEFAULT_FOCUS_INTERVALS.workMin,
+    breakMin: isNum(fi.breakMin) && fi.breakMin > 0 ? Math.round(fi.breakMin) : DEFAULT_FOCUS_INTERVALS.breakMin,
+  };
+
+  return {
+    habits,
+    habitLog,
+    triggers,
+    energy,
+    sessions,
+    question,
+    milestones,
+    rewardOptions,
+    rewards,
+    screenTimeLimitMinutes: limit,
+    focusIntervals,
+  };
 }
 
 function parseReminder(raw: unknown): ReminderSettings | null {
   if (!isObj(raw)) return null;
-  const { hour, minute, enabled } = raw;
-  if (!isNum(hour) || !isNum(minute)) return null;
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  return { hour: Math.trunc(hour), minute: Math.trunc(minute), enabled: enabled === true };
+  // normalizeSettings understands both the current { times: [...] } shape and
+  // the single { hour, minute } one older exports carry, and drops anything
+  // out of range, so a file from either version imports cleanly.
+  const settings = normalizeSettings(raw);
+  return settings.times.length > 0 ? settings : null;
 }
 
 export interface ParsedBackup {

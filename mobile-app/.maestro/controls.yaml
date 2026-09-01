@@ -1,0 +1,42 @@
+# The two settings that used to be constants nobody could reach: the focus
+# interval lengths, and whether notifications actually work.
+#
+# The notification half only means anything on a device. In a browser
+# expo-notifications has no scheduleNotificationAsync at all, so the switch
+# can never stay on there — which is why this check exists here rather than
+# in the Playwright probes.
+appId: com.yourcompany.noburnout
+---
+- launchApp:
+    clearState: true
+
+# --- focus intervals -------------------------------------------------------
+- tapOn: "Фокус"
+- assertVisible: "50:00"
+- assertVisible: "50 мин работы · 10 мин перерыва"
+- tapOn: "50 мин работы · 10 мин перерыва"
+- tapOn: "60/20"
+- tapOn: "Сохранить"
+- assertVisible: "60:00"
+- assertVisible: "60 мин работы · 20 мин перерыва"
+- takeScreenshot: focus-intervals
+# Saved, not just held in memory.
+- launchApp
+- tapOn: "Фокус"
+- assertVisible: "60 мин работы · 20 мин перерыва"
+
+# --- notification access ---------------------------------------------------
+- tapOn: "Настройки"
+# API 30 grants notifications without a prompt, so this is the expected state;
+# if a future image asks, the button below is what the user would tap.
+- assertVisible: "Доступ к уведомлениям есть"
+- takeScreenshot: notification-access
+- tapOn: "Напоминание"
+- tapOn: "Больше уведомлений в день"
+- assertVisible: "Напоминание 2"
+- tapOn: "Включить напоминания"
+# The count comes from the OS, not from what the app asked for — this is the
+# assertion that distinguishes "scheduled" from "the switch looks on".
+- assertVisible: "Система держит [1-9].*"
+- assertNotVisible: "Не удалось поставить напоминание в расписание.*"
+- takeScreenshot: reminders

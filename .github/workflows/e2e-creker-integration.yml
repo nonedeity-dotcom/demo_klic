@@ -173,8 +173,9 @@ jobs:
             (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml) || echo "screentime-integration FAILED" > flow-screentime.status
             (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/data-backup.yaml) || echo "data-backup FAILED" > flow-backup.status
             (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/library.yaml) || echo "library FAILED" > flow-library.status
+            (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/controls.yaml) || echo "controls FAILED" > flow-controls.status
             adb logcat -d > logcat.txt
-            cat flow-screentime.status flow-backup.status flow-library.status 2>/dev/null; [ ! -s flow-screentime.status ] && [ ! -s flow-backup.status ] && [ ! -s flow-library.status ]
+            cat flow-screentime.status flow-backup.status flow-library.status flow-controls.status 2>/dev/null; [ ! -s flow-screentime.status ] && [ ! -s flow-backup.status ] && [ ! -s flow-library.status ] && [ ! -s flow-controls.status ]
 
       - name: Locate Maestro screenshots
         if: always()
@@ -185,7 +186,7 @@ jobs:
           # top-level debug dir Maestro prints on a failed assertion), so this
           # widens the search instead of guessing a fixed depth.
           find "$HOME/.maestro" -iname "*.png" 2>/dev/null || true
-          for NAME in today backup backup-share-sheet tip-1 tip-2 library; do
+          for NAME in today backup backup-share-sheet tip-1 tip-2 library focus-intervals notification-access reminders; do
             SHOT=$(find "$HOME" . -iname "$NAME.png" 2>/dev/null | head -n 1)
             echo "Found $NAME: $SHOT"
             [ -n "$SHOT" ] && cp "$SHOT" "./$NAME-screenshot.png" || true

@@ -18,7 +18,16 @@ const KEYS = {
   rewards: "rewards-log-v1",
   screenTimeLimit: "screen-time-limit-minutes-v1",
   tipCursor: "tip-cursor-v1",
+  focusIntervals: "focus-intervals-v1",
 };
+
+export interface FocusIntervals {
+  workMin: number;
+  breakMin: number;
+}
+
+/** 50/10 as the starting point — the ratio the app's source material uses. */
+export const DEFAULT_FOCUS_INTERVALS: FocusIntervals = { workMin: 50, breakMin: 10 };
 
 export const DEFAULT_SCREEN_TIME_LIMIT_MIN = 180; // 3h/day, matches no particular study — just a sane starting point
 
@@ -61,6 +70,12 @@ function withKeyLock<T>(key: string, job: () => Promise<T>): Promise<T> {
 
 function uid() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** 1 minute to 4 hours — anything outside that is a broken value, not a choice. */
+function clampMinutes(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(240, Math.max(1, Math.round(value)));
 }
 
 function inRange(date: string, from: string, to: string) {
@@ -318,6 +333,24 @@ export const api = {
     });
   },
 
+  async getFocusIntervals(): Promise<FocusIntervals> {
+    const stored = await read<Partial<FocusIntervals>>(KEYS.focusIntervals, {});
+    // Clamped on read as well as on write: a hand-edited or half-written
+    // backup shouldn't be able to produce a timer that never ends.
+    return {
+      workMin: clampMinutes(stored.workMin, DEFAULT_FOCUS_INTERVALS.workMin),
+      breakMin: clampMinutes(stored.breakMin, DEFAULT_FOCUS_INTERVALS.breakMin),
+    };
+  },
+  async setFocusIntervals(intervals: FocusIntervals): Promise<FocusIntervals> {
+    const safe: FocusIntervals = {
+      workMin: clampMinutes(intervals.workMin, DEFAULT_FOCUS_INTERVALS.workMin),
+      breakMin: clampMinutes(intervals.breakMin, DEFAULT_FOCUS_INTERVALS.breakMin),
+    };
+    await write(KEYS.focusIntervals, safe);
+    return safe;
+  },
+
   /**
    * Where the tip rotation currently stands, as a 0-based index.
    *
@@ -371,6 +404,7 @@ export interface BackupData {
   rewardOptions: RewardOption[];
   rewards: Reward[];
   screenTimeLimitMinutes: number;
+  focusIntervals: FocusIntervals;
 }
 
 /** What an import actually changed, so the UI can report it honestly. */
@@ -408,7 +442,7 @@ function withAllKeyLocks<T>(job: () => Promise<T>): Promise<T> {
 /** Reads the whole local database. Nothing is filtered — this is the backup. */
 export async function exportData(): Promise<BackupData> {
   await ensureSeeded();
-  const [habits, habitLog, triggers, energy, sessions, question, milestones, rewardOptions, rewards, limit] =
+  const [habits, habitLog, triggers, energy, sessions, question, milestones, rewardOptions, rewards, limit, focusIntervals] =
     await Promise.all([
       read<Habit[]>(KEYS.habits, []),
       read<HabitLog[]>(KEYS.habitLog, []),
@@ -420,6 +454,7 @@ export async function exportData(): Promise<BackupData> {
       read<RewardOption[]>(KEYS.rewardOptions, []),
       read<Reward[]>(KEYS.rewards, []),
       read<number>(KEYS.screenTimeLimit, DEFAULT_SCREEN_TIME_LIMIT_MIN),
+      api.getFocusIntervals(),
     ]);
   return {
     habits: [...habits].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -432,6 +467,7 @@ export async function exportData(): Promise<BackupData> {
     rewardOptions,
     rewards,
     screenTimeLimitMinutes: limit,
+    focusIntervals,
   };
 }
 
@@ -449,6 +485,7 @@ export async function replaceData(data: BackupData): Promise<ImportStats> {
       write(KEYS.rewardOptions, data.rewardOptions),
       write(KEYS.rewards, data.rewards),
       write(KEYS.screenTimeLimit, data.screenTimeLimitMinutes),
+      write(KEYS.focusIntervals, data.focusIntervals),
     ]);
     return {
       habits: data.habits.length,

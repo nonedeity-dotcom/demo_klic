@@ -1,9 +1,18 @@
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { View, Text, Pressable, ScrollView, AppState, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useFocusEffect } from "@react-navigation/native";
 import { api, DEFAULT_SCREEN_TIME_LIMIT_MIN } from "../api/client";
 import { colors } from "../theme/colors";
 import DataBackup from "../components/DataBackup";
+import NotificationAccess from "../components/NotificationAccess";
+import {
+  getReminderSettings,
+  getReminderStatus,
+  type ReminderSettings,
+  type ReminderStatus,
+} from "../notifications/reminders";
 
 /**
  * Everything that is a setting rather than a daily action, so the bottom bar
@@ -34,8 +43,47 @@ function formatMinutes(min: number) {
   return m === 0 ? `${h} ч` : `${h} ч ${m} мин`;
 }
 
+function describeReminder(settings: ReminderSettings | null, status: ReminderStatus | null): string {
+  if (!settings || !status) return "Время и количество";
+  if (!settings.enabled) return "Выключено";
+  if (status.permission !== "granted") return "Включено, но система не пропускает уведомления";
+  const n = settings.times.length;
+  const word = n === 1 ? "раз" : n < 5 ? "раза" : "раз";
+  return `${n} ${word} в день · ${settings.times.map((t) => `${pad(t.hour)}:${pad(t.minute)}`).join(", ")}`;
+}
+
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
+
 export default function SettingsScreen({ navigation }: { navigation: { navigate: (screen: string) => void } }) {
   const qc = useQueryClient();
+
+  // Not react-query: these come from the OS and from a non-KEYS storage entry,
+  // and they change while you are away on the reminder screen or in the system
+  // settings, so they are re-read whenever this screen comes back into focus.
+  const [reminder, setReminder] = useState<ReminderSettings | null>(null);
+  const [notifStatus, setNotifStatus] = useState<ReminderStatus | null>(null);
+
+  const refreshReminder = useCallback(() => {
+    getReminderSettings().then(setReminder);
+    getReminderStatus().then(setNotifStatus);
+  }, []);
+
+  useEffect(() => {
+    // Returning from the system settings changes the answer, and nothing
+    // inside the app would say so.
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") refreshReminder();
+    });
+    return () => sub.remove();
+  }, [refreshReminder]);
+
+  // Navigating back from the reminder screen isn't an AppState change, so this
+  // covers the far more common case of editing the times and coming back.
+  useFocusEffect(refreshReminder);
+
+  const reminderHint = describeReminder(reminder, notifStatus);
 
   // The limit behind the "Экранное время в норме" habit was hardcoded at three
   // hours with nowhere to change it — the value existed in storage but no
@@ -68,10 +116,15 @@ export default function SettingsScreen({ navigation }: { navigation: { navigate:
         onPress={() => navigation.navigate("Library")}
       />
 
-      <Text style={[styles.sectionLabel, styles.spaced]}>Напоминание</Text>
+      <Text style={[styles.sectionLabel, styles.spaced]}>Уведомления</Text>
+      {/* The status block sits here as well as on the reminder screen: whether
+          the OS lets anything through is the first thing worth knowing, and
+          the switch alone never said. */}
+      <NotificationAccess onChanged={refreshReminder} />
+      <View style={{ height: 10 }} />
       <Row
-        label="Ежедневное уведомление"
-        hint="Время и включение"
+        label="Напоминание"
+        hint={reminderHint}
         onPress={() => navigation.navigate("Reminder")}
       />
 

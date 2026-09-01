@@ -38,16 +38,18 @@ Bottom bar, in order:
 
 1. **ReportScreen** — tip of the day, then 7-day streak/bar charts. Opens first.
 2. **TodayScreen** — habit checklist for today
-3. **FocusScreen** — 50/10 focus timer (SVG ring)
+3. **FocusScreen** — focus timer (SVG ring) with editable work/break lengths
 4. **EnergyScreen** — hourly energy grid (1-10 self-rating)
 5. **TriggersScreen** — distraction triggers removed so far
 6. **QuestionScreen** — "what can I remove today" daily prompt + history
 
 Pushed on top of the tabs, from the gear in the header:
 
-- **SettingsScreen** — reference, reminder, screen-time limit, backup
+- **SettingsScreen** — reference, notification access, reminder, screen-time
+  limit, backup
 - **LibraryScreen** — the full tip reference, four collapsible sections
-- **ReminderScreen** — daily local notification time + toggle
+- **ReminderScreen** — notification access, 1-5 reminders a day, one time
+  picker per slot
 
 Do not add a seventh tab: seven labels only fit at 8pt on a 320px screen and
 an eighth does not fit at all. Anything new that isn't a daily action belongs
@@ -66,6 +68,17 @@ A tip is a one-line `short`, a `full` paragraph revealed on tap, an optional
 and a `rotate` flag deciding whether it joins the rotation. Render every tip
 through `src/components/TipCard.tsx` so the reference and the rotating tip
 stay visually identical.
+
+## Saying what the system did, not what was asked
+
+Anything that depends on a permission or on the OS accepting something must
+report the OS's answer, never the request. A switch that stays on after the
+platform refused is the bug this rule exists for. `setReminderSettings`
+returns the applied settings plus a `failure` reason, and
+`NotificationAccess` shows the live permission and the count of notifications
+the OS actually holds. When adding anything similar, surface the real reason —
+"permission denied" and "the platform can't do this" send the user to
+different places.
 
 `src/lib/useRotatingTip.ts` steps the rotation forward on every app open — JS
 start and `background → active`, never at random — and the number beside a tip
