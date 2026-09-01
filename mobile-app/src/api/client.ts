@@ -8,6 +8,7 @@ import type {
   DailyQuestion,
   RewardOption,
   Reward,
+  Task,
   WeeklyReview,
 } from "../types";
 
@@ -30,6 +31,7 @@ const KEYS = {
   tipCursor: "tip-cursor-v1",
   focusIntervals: "focus-intervals-v1",
   reviews: "weekly-reviews-v1",
+  tasks: "tasks-v1",
 };
 
 export interface FocusIntervals {
@@ -294,6 +296,48 @@ export const api = {
     });
   },
 
+  async getTasks(): Promise<Task[]> {
+    return read(KEYS.tasks, []);
+  },
+  async addTask(label: string, kind: Task["kind"]): Promise<Task> {
+    return withKeyLock(KEYS.tasks, async () => {
+      const tasks = await read<Task[]>(KEYS.tasks, []);
+      const task: Task = { id: uid(), label, kind, done: false };
+      await write(KEYS.tasks, [...tasks, task]);
+      return task;
+    });
+  },
+  async setTaskDone(id: string, done: boolean): Promise<{ ok: true }> {
+    return withKeyLock(KEYS.tasks, async () => {
+      const tasks = await read<Task[]>(KEYS.tasks, []);
+      await write(
+        KEYS.tasks,
+        tasks.map((t) => (t.id === id ? { ...t, done } : t)),
+      );
+      return { ok: true as const };
+    });
+  },
+  async removeTask(id: string): Promise<{ ok: true }> {
+    return withKeyLock(KEYS.tasks, async () => {
+      const tasks = await read<Task[]>(KEYS.tasks, []);
+      await write(
+        KEYS.tasks,
+        tasks.filter((t) => t.id !== id),
+      );
+      return { ok: true as const };
+    });
+  },
+  async clearDoneTasks(): Promise<{ ok: true }> {
+    return withKeyLock(KEYS.tasks, async () => {
+      const tasks = await read<Task[]>(KEYS.tasks, []);
+      await write(
+        KEYS.tasks,
+        tasks.filter((t) => !t.done),
+      );
+      return { ok: true as const };
+    });
+  },
+
   async getReviews(): Promise<WeeklyReview[]> {
     const reviews = await read<WeeklyReview[]>(KEYS.reviews, []);
     // Newest first: the history list reads top-down and the current week is
@@ -441,6 +485,7 @@ export interface BackupData {
   rewardOptions: RewardOption[];
   rewards: Reward[];
   reviews: WeeklyReview[];
+  tasks: Task[];
   screenTimeLimitMinutes: number;
   focusIntervals: FocusIntervals;
 }
@@ -455,6 +500,7 @@ export interface ImportStats {
   question: number;
   rewards: number;
   reviews: number;
+  tasks: number;
 }
 
 const EMPTY_STATS: ImportStats = {
@@ -466,6 +512,7 @@ const EMPTY_STATS: ImportStats = {
   question: 0,
   rewards: 0,
   reviews: 0,
+  tasks: 0,
 };
 
 // Every mutation goes through withKeyLock, so an import has to hold *all* the
@@ -482,7 +529,7 @@ function withAllKeyLocks<T>(job: () => Promise<T>): Promise<T> {
 /** Reads the whole local database. Nothing is filtered — this is the backup. */
 export async function exportData(): Promise<BackupData> {
   await ensureSeeded();
-  const [habits, habitLog, triggers, energy, sessions, question, milestones, rewardOptions, rewards, reviews, limit, focusIntervals] =
+  const [habits, habitLog, triggers, energy, sessions, question, milestones, rewardOptions, rewards, reviews, tasks, limit, focusIntervals] =
     await Promise.all([
       read<Habit[]>(KEYS.habits, []),
       read<HabitLog[]>(KEYS.habitLog, []),
@@ -494,6 +541,7 @@ export async function exportData(): Promise<BackupData> {
       read<RewardOption[]>(KEYS.rewardOptions, []),
       read<Reward[]>(KEYS.rewards, []),
       read<WeeklyReview[]>(KEYS.reviews, []),
+      read<Task[]>(KEYS.tasks, []),
       read<number>(KEYS.screenTimeLimit, DEFAULT_SCREEN_TIME_LIMIT_MIN),
       api.getFocusIntervals(),
     ]);
@@ -508,6 +556,7 @@ export async function exportData(): Promise<BackupData> {
     rewardOptions,
     rewards,
     reviews,
+    tasks,
     screenTimeLimitMinutes: limit,
     focusIntervals,
   };
@@ -527,6 +576,7 @@ export async function replaceData(data: BackupData): Promise<ImportStats> {
       write(KEYS.rewardOptions, data.rewardOptions),
       write(KEYS.rewards, data.rewards),
       write(KEYS.reviews, data.reviews),
+      write(KEYS.tasks, data.tasks),
       write(KEYS.screenTimeLimit, data.screenTimeLimitMinutes),
       write(KEYS.focusIntervals, data.focusIntervals),
     ]);
@@ -539,6 +589,7 @@ export async function replaceData(data: BackupData): Promise<ImportStats> {
       question: data.question.length,
       rewards: data.rewards.length,
       reviews: data.reviews.length,
+      tasks: data.tasks.length,
     };
   });
 }
@@ -675,6 +726,17 @@ export async function mergeData(data: BackupData): Promise<ImportStats> {
       stats.reviews++;
     }
     if (stats.reviews > 0) await write(KEYS.reviews, reviews);
+
+    // --- tasks ---
+    const tasks = await read<Task[]>(KEYS.tasks, []);
+    const taskIds = new Set(tasks.map((t) => t.id));
+    for (const t of data.tasks) {
+      if (taskIds.has(t.id)) continue;
+      tasks.push(t);
+      taskIds.add(t.id);
+      stats.tasks++;
+    }
+    if (stats.tasks > 0) await write(KEYS.tasks, tasks);
 
     // --- celebrated milestones: union, so a milestone isn't re-celebrated ---
     const milestones = await read<number[]>(KEYS.milestones, []);

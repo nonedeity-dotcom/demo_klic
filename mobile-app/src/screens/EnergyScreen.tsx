@@ -1,10 +1,13 @@
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { useState } from "react";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { colors } from "../theme/colors";
 import { dateNDaysAgo } from "../lib/date";
 import { useTodayKey } from "../lib/useTodayKey";
-import type { EnergyLog } from "../types";
+import { confirmDestructive } from "../lib/confirm";
+import type { EnergyLog, Task } from "../types";
 
 const WAKE_HOUR = 7;
 const SLEEP_HOUR = 23;
@@ -30,6 +33,25 @@ export default function EnergyScreen() {
     queryFn: () => api.getEnergy(from, today) as Promise<EnergyLog[]>,
   });
 
+  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["tasks"], queryFn: () => api.getTasks() });
+  const invalidateTasks = () => qc.invalidateQueries({ queryKey: ["tasks"] });
+  const [taskDraft, setTaskDraft] = useState("");
+  const [taskKind, setTaskKind] = useState<Task["kind"]>("hard");
+
+  const addTask = useMutation({
+    mutationFn: () => api.addTask(taskDraft.trim(), taskKind),
+    onSuccess: () => {
+      setTaskDraft("");
+      invalidateTasks();
+    },
+  });
+  const setTaskDone = useMutation({
+    mutationFn: ({ id, done }: { id: string; done: boolean }) => api.setTaskDone(id, done),
+    onSuccess: invalidateTasks,
+  });
+  const removeTask = useMutation({ mutationFn: (id: string) => api.removeTask(id), onSuccess: invalidateTasks });
+  const clearDone = useMutation({ mutationFn: () => api.clearDoneTasks(), onSuccess: invalidateTasks });
+
   const setEnergy = useMutation({
     mutationFn: ({ hour, value }: { hour: number; value: number }) => api.setEnergy(today, hour, value),
     onSettled: () => qc.invalidateQueries({ queryKey: ["energy"] }),
@@ -51,7 +73,7 @@ export default function EnergyScreen() {
   const hasEnoughData = daysMarked >= MIN_DAYS_FOR_HINT && averages.length >= 2;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
       <Text style={styles.subtle}>Отметь уровень энергии по часам</Text>
       <Text style={[styles.subtle, { marginBottom: 20 }]}>
         так видно пики (сложные задачи) и спады (рутина)
@@ -103,6 +125,96 @@ export default function EnergyScreen() {
           );
         })}
       </View>
+
+      {/* The measurement was going nowhere: the screen found your peak and dip
+          and then left you to remember them. This is the half the source
+          actually asks for — hard work on the peaks, routine in the dips. */}
+      <Text style={styles.tasksLabel}>Задачи</Text>
+      <Text style={styles.tasksHint}>
+        {hasEnoughData
+          ? `Тяжёлое — ближе к ${peakHour}:00, рутину — к ${dipHour}:00.`
+          : "Пики появятся, когда наберётся достаточно отметок — пока просто список."}
+      </Text>
+
+      <View style={styles.taskAddRow}>
+        <TextInput
+          value={taskDraft}
+          onChangeText={setTaskDraft}
+          placeholder="Что сделать…"
+          placeholderTextColor={colors.textMuted}
+          style={styles.taskInput}
+          accessibilityLabel="Новая задача"
+          onSubmitEditing={() => taskDraft.trim() && addTask.mutate()}
+        />
+        <Pressable
+          onPress={() => taskDraft.trim() && addTask.mutate()}
+          accessibilityRole="button"
+          accessibilityLabel="Добавить задачу"
+          style={({ pressed }) => [styles.taskAddBtn, pressed && styles.dimmed]}
+        >
+          <Feather name="plus" size={16} color={colors.accentGreen} />
+        </Pressable>
+      </View>
+
+      <View style={styles.kindRow}>
+        {([
+          ["hard", "Тяжёлая"],
+          ["routine", "Рутина"],
+        ] as const).map(([kind, label]) => (
+          <Pressable
+            key={kind}
+            onPress={() => setTaskKind(kind)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: taskKind === kind }}
+            style={({ pressed }) => [styles.kindChip, taskKind === kind && styles.kindChipOn, pressed && styles.dimmed]}
+          >
+            <Text style={[styles.kindText, taskKind === kind && styles.kindTextOn]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {tasks.map((t) => {
+        const suggested = t.kind === "hard" ? peakHour : dipHour;
+        return (
+          <View key={t.id} style={[styles.taskCard, t.done && styles.taskCardDone]}>
+            <Pressable
+              onPress={() => setTaskDone.mutate({ id: t.id, done: !t.done })}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: t.done }}
+              accessibilityLabel={t.label}
+              style={styles.taskMain}
+            >
+              <View style={[styles.taskBox, t.done && styles.taskBoxDone]} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.taskLabel, t.done && styles.taskLabelDone]}>{t.label}</Text>
+                <Text style={styles.taskMeta}>
+                  {t.kind === "hard" ? "тяжёлая" : "рутина"}
+                  {hasEnoughData && suggested !== null && !t.done ? ` · лучше к ${suggested}:00` : ""}
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={() =>
+                confirmDestructive("Удалить задачу?", `«${t.label}» будет удалена.`, () => removeTask.mutate(t.id))
+              }
+              accessibilityLabel={`Удалить задачу: ${t.label}`}
+              style={styles.iconBtn}
+            >
+              <Feather name="trash-2" size={13} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        );
+      })}
+
+      {tasks.some((t) => t.done) && (
+        <Pressable
+          onPress={() => clearDone.mutate()}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.clearDone, pressed && styles.dimmed]}
+        >
+          <Text style={styles.clearDoneText}>Убрать выполненные</Text>
+        </Pressable>
+      )}
     </ScrollView>
   );
 }
@@ -128,4 +240,50 @@ const styles = StyleSheet.create({
   presetDotActive: { backgroundColor: colors.accentGreen },
   presetText: { fontSize: 10, color: colors.textMuted, fontWeight: "600" },
   presetTextActive: { color: colors.bg },
+  dimmed: { opacity: 0.65 },
+  tasksLabel: { color: colors.text, fontSize: 15, fontWeight: "600", marginTop: 28 },
+  tasksHint: { color: colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 4, marginBottom: 12 },
+  taskAddRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  taskInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 13,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  taskAddBtn: { padding: 8 },
+  kindRow: { flexDirection: "row", gap: 8, marginTop: 8, marginBottom: 12 },
+  kindChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  kindChipOn: { backgroundColor: "rgba(143,184,154,0.12)", borderColor: colors.accentGreen },
+  kindText: { color: colors.textMuted, fontSize: 12 },
+  kindTextOn: { color: colors.accentGreen, fontWeight: "600" },
+  taskCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  taskCardDone: { opacity: 0.55 },
+  taskMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
+  taskBox: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: "#4a5058" },
+  taskBoxDone: { backgroundColor: colors.accentGreen, borderWidth: 0 },
+  taskLabel: { color: colors.text, fontSize: 13, lineHeight: 18 },
+  taskLabelDone: { textDecorationLine: "line-through", color: colors.textMuted },
+  taskMeta: { color: colors.textMuted, fontSize: 10, marginTop: 2 },
+  iconBtn: { padding: 6 },
+  clearDone: { alignSelf: "center", paddingVertical: 8, marginTop: 4 },
+  clearDoneText: { color: colors.textMuted, fontSize: 12 },
 });

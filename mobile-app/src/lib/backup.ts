@@ -24,6 +24,7 @@ import type {
   DailyQuestion,
   RewardOption,
   Reward,
+  Task,
   WeeklyReview,
 } from "../types";
 
@@ -160,6 +161,12 @@ function parseData(raw: unknown): BackupData {
       : null,
   );
 
+  const tasks = pickValid<Task>(d.tasks, (t) =>
+    isStr(t.id) && isStr(t.label)
+      ? { id: t.id, label: t.label, kind: t.kind === "routine" ? "routine" : "hard", done: t.done === true }
+      : null,
+  );
+
   const milestones = list(d.milestones).filter(isNum);
 
   const limit = isNum(d.screenTimeLimitMinutes) && d.screenTimeLimitMinutes > 0 ? d.screenTimeLimitMinutes : 180;
@@ -183,6 +190,7 @@ function parseData(raw: unknown): BackupData {
     rewardOptions,
     rewards,
     reviews,
+    tasks,
     screenTimeLimitMinutes: limit,
     focusIntervals,
   };
@@ -226,7 +234,8 @@ export function parseBackupText(text: string): ParsedBackup {
     data.energy.length === 0 &&
     data.question.length === 0 &&
     data.rewards.length === 0 &&
-    data.reviews.length === 0;
+    data.reviews.length === 0 &&
+    data.tasks.length === 0;
   if (isEmpty) throw new BackupError("В файле нет данных, которые можно перенести.");
 
   return { data, reminder: parseReminder(raw.reminder), exportedAt: isStr(raw.exportedAt) ? raw.exportedAt : null };

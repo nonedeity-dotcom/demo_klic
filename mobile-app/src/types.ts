@@ -54,6 +54,23 @@ export interface DailyQuestion {
 }
 
 /**
+ * A thing to do, tagged by what it demands of you.
+ *
+ * The source measures energy hour by hour and then says: put analytical work
+ * on the peaks and routine on the dips. The app measured and then did nothing
+ * with the measurement — this is what closes that loop. Undated on purpose:
+ * it is a planning aid for the day in front of you, not another history to
+ * keep.
+ */
+export interface Task {
+  id: string;
+  label: string;
+  /** "hard" wants a peak hour; "routine" is fine in a dip. */
+  kind: "hard" | "routine";
+  done: boolean;
+}
+
+/**
  * Step 5 of the "точка возврата" protocol: once a week, on a calm head,
  * look at what worked and change one thing. Stored per ISO week rather than
  * per date so a review written on Sunday and one written on Monday morning

@@ -41,7 +41,8 @@ Bottom bar, in order:
 2. **TodayScreen** — habit checklist for today, each habit optionally
    carrying a declared minimal version that can be ticked instead
 3. **FocusScreen** — focus timer (SVG ring) with editable work/break lengths
-4. **EnergyScreen** — hourly energy grid (1-10 self-rating)
+4. **EnergyScreen** — hourly energy grid (1-10 self-rating) plus a task list
+   tagged hard/routine, each suggesting the measured peak or dip hour
 5. **TriggersScreen** — distraction triggers removed so far
 6. **QuestionScreen** — "what can I remove today" daily prompt + history
 
