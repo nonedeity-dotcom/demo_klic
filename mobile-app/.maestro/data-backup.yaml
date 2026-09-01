@@ -6,24 +6,18 @@
 # resolved, so seeing it proves the native write and the share sheet
 # actually worked, not just that the buttons rendered.
 #
-# Данные now lives in Настройки, reached from the gear in the header, rather
-# than at the bottom of Отчёт.
-#
-# Run 26 pressed Back ~1s after the tap, before the chooser had come up, so
-# this waits for the screen to settle first.
-#
-# Run 27 then showed the native path genuinely works — the chooser listed
-# no-burnout-2026-09-01.json, and logcat's view dump carried the app's own
-# "Файл no-burnout-2026-09-01.json готов" — but the assertion still failed:
-# that node measured y 615-591 on a 640px screen, i.e. entirely below the
-# visible area. The app now puts the note above the buttons, and this
-# scrolls to it rather than assuming the viewport is in the right place.
+# Nothing on the settings screen is assumed to be on screen: it has grown
+# (notification status, screen-time limit) and Данные is now well below the
+# fold on a 640px device — run 29 failed on exactly that, asserting a
+# section header that had simply scrolled out of view.
 appId: com.yourcompany.noburnout
 ---
 - launchApp
-# The gear carries accessibilityLabel "Настройки".
 - tapOn: "Настройки"
-- assertVisible: "Данные"
+- scrollUntilVisible:
+    element:
+      text: "Данные"
+    direction: DOWN
 - scrollUntilVisible:
     element:
       text: "Скачать данные"

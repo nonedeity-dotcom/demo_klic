@@ -5,6 +5,11 @@
 # expo-notifications has no scheduleNotificationAsync at all, so the switch
 # can never stay on there — which is why this check exists here rather than
 # in the Playwright probes.
+#
+# The focus screen scrolls now that it carries an editor, and the reminder
+# screen grew a status block and a slot per reminder. Run 29 failed tapping
+# "Сохранить" while it sat below the fold, so every element here is scrolled
+# to rather than assumed on screen, in the order it appears.
 appId: com.yourcompany.noburnout
 ---
 - launchApp:
@@ -13,17 +18,34 @@ appId: com.yourcompany.noburnout
 # --- focus intervals -------------------------------------------------------
 - tapOn: "Фокус"
 - assertVisible: "50:00"
-- assertVisible: "50 мин работы · 10 мин перерыва"
+- scrollUntilVisible:
+    element:
+      text: "50 мин работы · 10 мин перерыва"
+    direction: DOWN
 - tapOn: "50 мин работы · 10 мин перерыва"
+- scrollUntilVisible:
+    element:
+      text: "60/20"
+    direction: DOWN
 - tapOn: "60/20"
+- scrollUntilVisible:
+    element:
+      text: "Сохранить"
+    direction: DOWN
 - tapOn: "Сохранить"
-- assertVisible: "60:00"
-- assertVisible: "60 мин работы · 20 мин перерыва"
+- scrollUntilVisible:
+    element:
+      text: "60 мин работы · 20 мин перерыва"
+    direction: DOWN
 - takeScreenshot: focus-intervals
 # Saved, not just held in memory.
 - launchApp
 - tapOn: "Фокус"
-- assertVisible: "60 мин работы · 20 мин перерыва"
+- assertVisible: "60:00"
+- scrollUntilVisible:
+    element:
+      text: "60 мин работы · 20 мин перерыва"
+    direction: DOWN
 
 # --- notification access ---------------------------------------------------
 - tapOn: "Настройки"
@@ -32,11 +54,24 @@ appId: com.yourcompany.noburnout
 - assertVisible: "Доступ к уведомлениям есть"
 - takeScreenshot: notification-access
 - tapOn: "Напоминание"
-- tapOn: "Больше уведомлений в день"
-- assertVisible: "Напоминание 2"
+# Top to bottom: the switch sits above the count, which sits above the slots.
 - tapOn: "Включить напоминания"
-# The count comes from the OS, not from what the app asked for — this is the
-# assertion that distinguishes "scheduled" from "the switch looks on".
-- assertVisible: "Система держит [1-9].*"
+- scrollUntilVisible:
+    element:
+      text: "Больше уведомлений в день"
+    direction: DOWN
+- tapOn: "Больше уведомлений в день"
+- scrollUntilVisible:
+    element:
+      text: "Напоминание 2"
+    direction: DOWN
 - assertNotVisible: "Не удалось поставить напоминание в расписание.*"
+# The count comes from the OS, not from what the app asked for — this is the
+# assertion that distinguishes "scheduled" from "the switch looks on". It is
+# back at the top of the screen, hence the upward scroll.
+- scrollUntilVisible:
+    element:
+      text: "Система держит [1-9].*"
+    direction: UP
+- assertVisible: "Система держит [1-9].*"
 - takeScreenshot: reminders

@@ -5,6 +5,10 @@
 # the counter can step — a genuine cold start re-runs the JS, and a relaunch
 # of a process Android kept alive comes back through the foreground handler.
 # The text itself isn't asserted; the number is what has to be right.
+#
+# The reference opens with Фокус expanded and 13 numbered tips under it, so
+# the other three section headers start below the fold — run 29 failed
+# asserting the second one was visible without scrolling to it.
 appId: com.yourcompany.noburnout
 ---
 - launchApp:
@@ -18,13 +22,19 @@ appId: com.yourcompany.noburnout
 - tapOn: "Настройки"
 - tapOn: "Подсказки"
 - assertVisible: "Фокус"
-- assertVisible: "Дофамин и триггеры"
+- scrollUntilVisible:
+    element:
+      text: "Дофамин и триггеры"
+    direction: DOWN
 - scrollUntilVisible:
     element:
       text: "Яма и плато"
     direction: DOWN
-- assertVisible: "Действие вместо анализа"
-# Sections start collapsed except the first, so a tip from Фокус is on screen.
+- scrollUntilVisible:
+    element:
+      text: "Действие вместо анализа"
+    direction: DOWN
+# Back up to a tip from the section that starts expanded.
 - scrollUntilVisible:
     element:
       text: "Перед работой — 10–20 минут скуки"
