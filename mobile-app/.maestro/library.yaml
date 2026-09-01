@@ -1,0 +1,29 @@
+# The reference and the tip of the day, on a device.
+#
+# The tip is derived from the date, so its text can't be asserted literally —
+# what matters is that the block renders, that tapping it reveals more than
+# the one line, and that the reference behind it opens with its four sections.
+appId: com.yourcompany.noburnout
+---
+- launchApp
+# Отчёт is the default tab, and the tip of the day sits at the top of it.
+- assertVisible: "Подсказка дня"
+- takeScreenshot: tip-of-day
+- tapOn: "Настройки"
+- tapOn: "Подсказки"
+- assertVisible: "Фокус"
+- assertVisible: "Дофамин и триггеры"
+- scrollUntilVisible:
+    element:
+      text: "Яма и плато"
+    direction: DOWN
+- assertVisible: "Действие вместо анализа"
+# Sections start collapsed except the first, so a tip from Фокус is on screen.
+- scrollUntilVisible:
+    element:
+      text: "Перед работой — 10–20 минут скуки"
+    direction: UP
+- tapOn: "Перед работой — 10–20 минут скуки"
+# The paragraph behind the one-liner.
+- assertVisible: "Тишина: без экрана, без музыки, без ленты.*"
+- takeScreenshot: library

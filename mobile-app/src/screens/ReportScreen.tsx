@@ -7,7 +7,7 @@ import { dateNDaysAgo, weekdayLabel } from "../lib/date";
 import { plural } from "../lib/plural";
 import { useTodayKey } from "../lib/useTodayKey";
 import TwoCurves from "../components/TwoCurves";
-import DataBackup from "../components/DataBackup";
+import TipOfDay from "../components/TipOfDay";
 import type { Habit, HabitLog, FocusSession } from "../types";
 
 export default function ReportScreen() {
@@ -87,6 +87,10 @@ export default function ReportScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
+      {/* First thing on the first screen: one line, and the reasoning behind
+          it if you tap. The rest of the library lives in settings. */}
+      <TipOfDay />
+
       <View style={styles.hero}>
         <TwoCurves />
         <Text style={styles.heroCaption}>
@@ -174,10 +178,6 @@ export default function ReportScreen() {
         })}
       </View>
 
-      {/* Backup lives here rather than behind an eighth tab: seven labels
-          already only just fit across a 320px screen, and this is the screen
-          about the accumulated history in the first place. */}
-      <DataBackup />
     </ScrollView>
   );
 }

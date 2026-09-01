@@ -32,20 +32,40 @@ reserved for focus-session data).
 
 ## Screen inventory (`mobile-app/src/screens/`)
 
-Six-tab bottom nav (`src/navigation/RootTabs.tsx`) plus a reminder tab:
+`src/navigation/RootTabs.tsx` is a native-stack wrapping a six-tab bottom bar.
 
-1. **TodayScreen** — habit checklist for today
-2. **FocusScreen** — 50/10 focus timer (SVG ring)
-3. **EnergyScreen** — hourly energy grid (1-10 self-rating)
-4. **TriggersScreen** — distraction triggers removed so far
-5. **QuestionScreen** — "what can I remove today" daily prompt + history
-6. **ReportScreen** — 7-day streak/bar charts
-7. **ReminderScreen** — daily local notification time + toggle
+Bottom bar, in order:
+
+1. **ReportScreen** — tip of the day, then 7-day streak/bar charts. Opens first.
+2. **TodayScreen** — habit checklist for today
+3. **FocusScreen** — 50/10 focus timer (SVG ring)
+4. **EnergyScreen** — hourly energy grid (1-10 self-rating)
+5. **TriggersScreen** — distraction triggers removed so far
+6. **QuestionScreen** — "what can I remove today" daily prompt + history
+
+Pushed on top of the tabs, from the gear in the header:
+
+- **SettingsScreen** — reference, reminder, screen-time limit, backup
+- **LibraryScreen** — the full tip reference, four collapsible sections
+- **ReminderScreen** — daily local notification time + toggle
+
+Do not add a seventh tab: seven labels only fit at 8pt on a 320px screen and
+an eighth does not fit at all. Anything new that isn't a daily action belongs
+behind the gear.
 
 No account, no server — everything reads/writes through `src/api/client.ts`
 (AsyncStorage-backed, despite the `api` name). Any new screen should follow
 the same pattern: a `read`/`write` pair against a new `KEYS.*` entry, not a
 new storage mechanism.
+
+## Tips and the reference
+
+Content lives in `src/content/library.ts` as data, never inline in a screen.
+A tip is a one-line `short`, a `full` paragraph revealed on tap, an optional
+`caveat` for anything the source states more confidently than it has earned,
+and a `daily` flag deciding whether it can be the tip of the day. Render them
+through `src/components/TipCard.tsx` so the reference and the daily tip stay
+visually identical. `src/lib/tipOfDay.ts` picks by date, never at random.
 
 ## Component conventions
 

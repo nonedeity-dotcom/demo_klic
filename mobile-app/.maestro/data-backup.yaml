@@ -6,23 +6,24 @@
 # resolved, so seeing it proves the native write and the share sheet
 # actually worked, not just that the buttons rendered.
 #
+# Данные now lives in Настройки, reached from the gear in the header, rather
+# than at the bottom of Отчёт.
+#
 # Run 26 pressed Back ~1s after the tap, before the chooser had come up, so
-# this waits for the screen to settle first and returns to Отчёт explicitly
-# (Back in a bottom-tab navigator can pop to the first tab).
+# this waits for the screen to settle first.
 #
 # Run 27 then showed the native path genuinely works — the chooser listed
 # no-burnout-2026-09-01.json, and logcat's view dump carried the app's own
 # "Файл no-burnout-2026-09-01.json готов" — but the assertion still failed:
 # that node measured y 615-591 on a 640px screen, i.e. entirely below the
-# visible area, so Maestro rightly reported it invisible. The app now puts
-# the note above the buttons, and this scrolls to it rather than assuming
-# the viewport is already in the right place.
+# visible area. The app now puts the note above the buttons, and this
+# scrolls to it rather than assuming the viewport is in the right place.
 appId: com.yourcompany.noburnout
 ---
 - launchApp
-- tapOn: "Отчёт"
-# The section sits at the bottom of a scrolling report, so it is off-screen
-# on the emulator's 320x640 viewport on arrival.
+# The gear carries accessibilityLabel "Настройки".
+- tapOn: "Настройки"
+- assertVisible: "Данные"
 - scrollUntilVisible:
     element:
       text: "Скачать данные"
@@ -40,9 +41,6 @@ appId: com.yourcompany.noburnout
 - pressKey: Back
 - waitForAnimationToEnd:
     timeout: 10000
-- tapOn: "Отчёт"
-# The confirmation renders at the bottom of a scrolling screen; scroll to it
-# rather than assuming the tap left the viewport in the right place.
 - scrollUntilVisible:
     element:
       text: "Файл no-burnout-.*\\.json.*"

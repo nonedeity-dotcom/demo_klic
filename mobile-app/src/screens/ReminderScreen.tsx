@@ -32,7 +32,8 @@ export default function ReminderScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Напоминание</Text>
+      {/* No title here any more: this is pushed from settings and the stack
+          header already says "Напоминание". */}
       <Text style={styles.subtle}>Ежедневное уведомление в одно и то же время — заглянуть в чек-лист</Text>
 
       <View style={styles.timeRow}>
@@ -79,7 +80,6 @@ export default function ReminderScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, padding: 20 },
-  title: { color: colors.text, fontSize: 18, fontWeight: "600", marginBottom: 4 },
   subtle: { color: colors.textMuted, fontSize: 12, marginBottom: 32 },
   timeRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   timeUnit: { alignItems: "center", gap: 10 },
