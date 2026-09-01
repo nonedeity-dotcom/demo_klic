@@ -2,6 +2,12 @@ export interface Habit {
   id: string;
   label: string;
   hint?: string | null;
+  /**
+   * The cut-down version for bad days — step 4 of the source's "точка
+   * возврата" protocol. Declared in advance on purpose: on the day you
+   * actually need it, you won't invent one.
+   */
+  minimal?: string | null;
   sortOrder: number;
   /** When set, this habit's done-state for today is managed automatically
    *  instead of by tapping — currently only "screentime" (from creker), see
@@ -14,6 +20,13 @@ export interface HabitLog {
   habitId: string;
   date: string; // ISO date
   done: boolean;
+  /**
+   * True when the day was closed with the minimal version rather than the
+   * full one. Still counts for the streak — the source's whole point is that
+   * a small day beats a broken chain — but the report shows the difference so
+   * a month of minimums doesn't read as a month of full days.
+   */
+  minimal?: boolean;
 }
 
 export interface Trigger {

@@ -14,6 +14,7 @@ export default function TodayScreen() {
   const today = useTodayKey();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [editMinimal, setEditMinimal] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [adding, setAdding] = useState(false);
 
@@ -38,16 +39,17 @@ export default function TodayScreen() {
   }, [habits.length, today]);
 
   const toggle = useMutation({
-    mutationFn: ({ habitId, done }: { habitId: string; done: boolean }) =>
-      api.toggleHabit(habitId, today, done),
+    mutationFn: ({ habitId, done, minimal }: { habitId: string; done: boolean; minimal?: boolean }) =>
+      api.toggleHabit(habitId, today, done, minimal ?? false),
     // Optimistic update so the checkbox feels instant instead of waiting
     // on a round trip — same snappy feel as the original local-storage demo.
-    onMutate: async ({ habitId, done }) => {
+    onMutate: async ({ habitId, done, minimal }) => {
       await qc.cancelQueries({ queryKey: ["habitLog", today] });
       const prev = qc.getQueryData<HabitLog[]>(["habitLog", today]) || [];
+      const flag = done && !!minimal;
       const next = prev.some((l) => l.habitId === habitId)
-        ? prev.map((l) => (l.habitId === habitId ? { ...l, done } : l))
-        : [...prev, { id: "temp", habitId, date: today, done }];
+        ? prev.map((l) => (l.habitId === habitId ? { ...l, done, minimal: flag } : l))
+        : [...prev, { id: "temp", habitId, date: today, done, minimal: flag }];
       qc.setQueryData(["habitLog", today], next);
       return { prev };
     },
@@ -70,7 +72,8 @@ export default function TodayScreen() {
   });
 
   const updateHabit = useMutation({
-    mutationFn: ({ id, label }: { id: string; label: string }) => api.updateHabit(id, { label }),
+    mutationFn: ({ id, label, minimal }: { id: string; label: string; minimal: string | null }) =>
+      api.updateHabit(id, { label, minimal }),
     onSuccess: () => {
       setEditingId(null);
       invalidateHabits();
@@ -97,11 +100,18 @@ export default function TodayScreen() {
   const startEdit = (h: Habit) => {
     setEditingId(h.id);
     setEditDraft(h.label);
+    setEditMinimal(h.minimal ?? "");
   };
 
   const saveEdit = () => {
-    if (editingId && editDraft.trim()) updateHabit.mutate({ id: editingId, label: editDraft.trim() });
-    else setEditingId(null);
+    if (editingId && editDraft.trim()) {
+      updateHabit.mutate({
+        id: editingId,
+        label: editDraft.trim(),
+        // Empty means "no minimal version", not an empty string to render.
+        minimal: editMinimal.trim() || null,
+      });
+    } else setEditingId(null);
   };
 
   const submitNew = () => {
@@ -123,32 +133,48 @@ export default function TodayScreen() {
       </Text>
       <View style={{ height: 16 }} />
       {habits.map((h) => {
-        const checked = !!logs.find((l) => l.habitId === h.id)?.done;
+        const log = logs.find((l) => l.habitId === h.id);
+        const checked = !!log?.done;
+        const asMinimal = checked && !!log?.minimal;
         const isEditing = editingId === h.id;
 
         if (isEditing) {
           return (
-            <View key={h.id} style={[styles.card, styles.cardEditing]}>
+            <View key={h.id} style={styles.editCard}>
+              <View style={styles.editRow}>
+                <TextInput
+                  value={editDraft}
+                  onChangeText={setEditDraft}
+                  autoFocus
+                  style={styles.editInput}
+                  placeholderTextColor={colors.textMuted}
+                  onSubmitEditing={saveEdit}
+                />
+                <Pressable onPress={saveEdit} style={styles.iconBtn} accessibilityLabel="Сохранить привычку">
+                  <Feather name="check" size={16} color={colors.accentGreen} />
+                </Pressable>
+                <Pressable onPress={() => setEditingId(null)} style={styles.iconBtn} accessibilityLabel="Отменить">
+                  <Feather name="x" size={16} color={colors.textMuted} />
+                </Pressable>
+              </View>
+              {/* Declared here, ahead of time, because on the day you need a
+                  smaller version you will not be in the mood to invent one. */}
               <TextInput
-                value={editDraft}
-                onChangeText={setEditDraft}
-                autoFocus
-                style={styles.editInput}
+                value={editMinimal}
+                onChangeText={setEditMinimal}
+                placeholder="Минимальный вариант на плохой день…"
                 placeholderTextColor={colors.textMuted}
+                style={[styles.editInput, styles.editMinimalInput]}
+                accessibilityLabel="Минимальный вариант"
                 onSubmitEditing={saveEdit}
               />
-              <Pressable onPress={saveEdit} style={styles.iconBtn}>
-                <Feather name="check" size={16} color={colors.accentGreen} />
-              </Pressable>
-              <Pressable onPress={() => setEditingId(null)} style={styles.iconBtn}>
-                <Feather name="x" size={16} color={colors.textMuted} />
-              </Pressable>
             </View>
           );
         }
 
         return (
-          <View key={h.id} style={[styles.card, checked && styles.cardChecked]}>
+          <View key={h.id} style={styles.habitBlock}>
+          <View style={[styles.card, checked && styles.cardChecked]}>
             <Pressable
               onPress={() => toggle.mutate({ habitId: h.id, done: !checked })}
               style={styles.cardMain}
@@ -156,7 +182,15 @@ export default function TodayScreen() {
               accessibilityState={{ checked }}
               accessibilityLabel={h.label}
             >
-              <View style={[styles.checkbox, checked && styles.checkboxChecked]} />
+              {/* A minimal day is marked with a ring rather than a filled dot:
+                  it counts, but it shouldn't look identical to a full one. */}
+              <View
+                style={[
+                  styles.checkbox,
+                  checked && !asMinimal && styles.checkboxChecked,
+                  asMinimal && styles.checkboxMinimal,
+                ]}
+              />
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
                   <Text style={[styles.label, { flexShrink: 1 }]}>{h.label}</Text>
@@ -170,12 +204,38 @@ export default function TodayScreen() {
                 {!!h.hint && <Text style={styles.hint}>{h.hint}</Text>}
               </View>
             </Pressable>
+
             <Pressable onPress={() => startEdit(h)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${h.label}`}>
               <Feather name="edit-2" size={14} color={colors.textMuted} />
             </Pressable>
             <Pressable onPress={() => confirmRemove(h)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${h.label}`}>
               <Feather name="trash-2" size={14} color={colors.textMuted} />
             </Pressable>
+          </View>
+
+          {/* Only where a minimal version was declared. Ticking it keeps the
+              chain alive on a day the full version isn't happening — the
+              whole point of step 4 of the protocol. */}
+          {!!h.minimal && !(checked && !asMinimal) && (
+            <Pressable
+              onPress={() => toggle.mutate({ habitId: h.id, done: !asMinimal, minimal: true })}
+              accessibilityRole="button"
+              accessibilityState={{ selected: asMinimal }}
+              accessibilityLabel={
+                asMinimal ? `Снять отметку по минимуму: ${h.label}` : `Отметить по минимуму: ${h.minimal}`
+              }
+              style={({ pressed }) => [styles.minimalPill, asMinimal && styles.minimalPillOn, pressed && styles.dimmed]}
+            >
+              <Feather
+                name={asMinimal ? "check" : "corner-down-right"}
+                size={11}
+                color={asMinimal ? colors.accentGreen : colors.textMuted}
+              />
+              <Text style={[styles.minimalText, asMinimal && styles.minimalTextOn]}>
+                {asMinimal ? `По минимуму: ${h.minimal}` : `Минимум: ${h.minimal}`}
+              </Text>
+            </Pressable>
+          )}
           </View>
         );
       })}
@@ -211,6 +271,36 @@ export default function TodayScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   subtle: { color: colors.textMuted, fontSize: 13 },
+  habitBlock: { marginBottom: 10 },
+  editCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 10,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  editRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  editMinimalInput: { fontSize: 12, color: colors.textMuted },
+  checkboxMinimal: { borderColor: colors.accentGreen, borderWidth: 2, backgroundColor: "transparent" },
+  minimalPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    marginTop: 6,
+    marginLeft: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+  },
+  minimalPillOn: { backgroundColor: "rgba(143,184,154,0.12)" },
+  minimalText: { color: colors.textMuted, fontSize: 11, flexShrink: 1 },
+  minimalTextOn: { color: colors.accentGreen },
+  dimmed: { opacity: 0.7 },
   card: {
     flexDirection: "row",
     gap: 8,
@@ -224,6 +314,7 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   cardMain: { flexDirection: "row", gap: 12, alignItems: "flex-start", flex: 1 },
+  cardInBlock: { marginBottom: 0 },
   cardChecked: { backgroundColor: "rgba(143,184,154,0.12)", borderColor: colors.accentGreenDark },
   cardEditing: { borderColor: colors.accent },
   checkbox: {

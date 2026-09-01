@@ -38,7 +38,8 @@ Bottom bar, in order:
 
 1. **ReportScreen** — rotating tip, streak + which phase that streak means,
    7-day bar charts. Opens first.
-2. **TodayScreen** — habit checklist for today
+2. **TodayScreen** — habit checklist for today, each habit optionally
+   carrying a declared minimal version that can be ticked instead
 3. **FocusScreen** — focus timer (SVG ring) with editable work/break lengths
 4. **EnergyScreen** — hourly energy grid (1-10 self-rating)
 5. **TriggersScreen** — distraction triggers removed so far

@@ -86,6 +86,7 @@ function parseData(raw: unknown): BackupData {
           id: h.id,
           label: h.label,
           hint: isStr(h.hint) ? h.hint : null,
+          minimal: isStr(h.minimal) ? h.minimal : null,
           sortOrder: isNum(h.sortOrder) ? h.sortOrder : index,
           auto: h.auto === "screentime" ? "screentime" : null,
         }
@@ -94,7 +95,13 @@ function parseData(raw: unknown): BackupData {
 
   const habitLog = pickValid<HabitLog>(d.habitLog, (l) =>
     isStr(l.habitId) && isDateKey(l.date)
-      ? { id: isStr(l.id) ? l.id : `${l.habitId}-${l.date}`, habitId: l.habitId, date: l.date, done: l.done === true }
+      ? {
+          id: isStr(l.id) ? l.id : `${l.habitId}-${l.date}`,
+          habitId: l.habitId,
+          date: l.date,
+          done: l.done === true,
+          minimal: l.done === true && l.minimal === true,
+        }
       : null,
   );
 

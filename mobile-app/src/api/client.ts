@@ -86,12 +86,12 @@ function inRange(date: string, from: string, to: string) {
 // habit/trigger" UI yet, so these are the starting set (drawn from the
 // focus/dopamine-detox notes the app is built around).
 const DEFAULT_HABITS: Habit[] = [
-  { id: uid(), label: "10–20 минут скуки перед стартом работы", hint: "тишина, без экрана, без музыки", sortOrder: 0 },
+  { id: uid(), label: "10–20 минут скуки перед стартом работы", hint: "тишина, без экрана, без музыки", minimal: "5 минут тишины", sortOrder: 0 },
   { id: uid(), label: "Ритуал входа в фокус", hint: "крепкий чай/кофе — сигнал мозгу", sortOrder: 1 },
   { id: uid(), label: "Телефон — в другой комнате на время работы", sortOrder: 2 },
   { id: uid(), label: "Чёткий дедлайн перед стартом задачи", sortOrder: 3 },
-  { id: uid(), label: "10 минут без телефона после блока работы", hint: "50 минут работа / 10 минут отдых", sortOrder: 4 },
-  { id: uid(), label: "Час без телефона с утра", sortOrder: 5 },
+  { id: uid(), label: "10 минут без телефона после блока работы", hint: "50 минут работа / 10 минут отдых", minimal: "3 минуты без телефона", sortOrder: 4 },
+  { id: uid(), label: "Час без телефона с утра", minimal: "15 минут без телефона", sortOrder: 5 },
   { id: uid(), label: "Стакан воды сразу после пробуждения", sortOrder: 6 },
   { id: uid(), label: "Чай без сахара — без резких стимулов с утра", sortOrder: 7 },
   { id: uid(), label: "Без еды в первый час после пробуждения", sortOrder: 8 },
@@ -142,12 +142,12 @@ export const api = {
       // Max+1, not length: after any deletion, length collides with an
       // existing sortOrder and two habits fight for the same slot.
       const nextOrder = habits.reduce((max, h) => Math.max(max, h.sortOrder), -1) + 1;
-      const habit: Habit = { id: uid(), label, hint: hint ?? null, sortOrder: nextOrder };
+      const habit: Habit = { id: uid(), label, hint: hint ?? null, minimal: null, sortOrder: nextOrder };
       await write(KEYS.habits, [...habits, habit]);
       return habit;
     });
   },
-  async updateHabit(id: string, data: { label?: string; hint?: string }): Promise<{ ok: true }> {
+  async updateHabit(id: string, data: { label?: string; hint?: string; minimal?: string | null }): Promise<{ ok: true }> {
     return withKeyLock(KEYS.habits, async () => {
       const habits = await read<Habit[]>(KEYS.habits, []);
       await write(
@@ -181,11 +181,18 @@ export const api = {
     const logs = await read<HabitLog[]>(KEYS.habitLog, []);
     return logs.filter((l) => inRange(l.date, from, to));
   },
-  async toggleHabit(habitId: string, date: string, done: boolean): Promise<HabitLog> {
+  /**
+   * `minimal` marks the day as closed with the cut-down version. It still
+   * counts as done — a small day is the thing that keeps the chain alive —
+   * but it is recorded separately so the report can tell them apart.
+   */
+  async toggleHabit(habitId: string, date: string, done: boolean, minimal = false): Promise<HabitLog> {
     return withKeyLock(KEYS.habitLog, async () => {
       const logs = await read<HabitLog[]>(KEYS.habitLog, []);
       const existing = logs.find((l) => l.habitId === habitId && l.date === date);
-      const entry: HabitLog = existing ? { ...existing, done } : { id: uid(), habitId, date, done };
+      const entry: HabitLog = existing
+        ? { ...existing, done, minimal: done ? minimal : false }
+        : { id: uid(), habitId, date, done, minimal: done ? minimal : false };
       await write(KEYS.habitLog, existing ? logs.map((l) => (l === existing ? entry : l)) : [...logs, entry]);
       return entry;
     });

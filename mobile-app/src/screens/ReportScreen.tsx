@@ -49,6 +49,7 @@ export default function ReportScreen() {
   const countsFor = (log: HabitLog) => log.done && habitIds.has(log.habitId);
 
   const doneByDay = (day: string) => logs.filter((l) => l.date === day && countsFor(l)).length;
+  const minimalCount = logs.filter((l) => countsFor(l) && l.minimal).length;
   const sessionsByDay = (day: string) => sessions.filter((s) => s.date === day).length;
 
   // How many habits a day needs to "count". With no habits at all there is
@@ -169,6 +170,13 @@ export default function ReportScreen() {
         })}
       </View>
 
+      {minimalCount > 0 && (
+        <Text style={styles.minimalNote}>
+          Из них {minimalCount} {plural(minimalCount, ["отметка", "отметки", "отметок"])} по минимуму — день
+          засчитан, но в урезанном варианте.
+        </Text>
+      )}
+
       <Text style={styles.sectionLabel}>Фокус-сессии по дням</Text>
       <View style={styles.barRow}>
         {days.map((d) => {
@@ -228,4 +236,5 @@ const styles = StyleSheet.create({
   barTrack: { flex: 1, width: "100%", justifyContent: "flex-end" },
   bar: { width: "100%", borderRadius: 4 },
   barLabel: { color: colors.textMuted, fontSize: 10 },
+  minimalNote: { color: colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: -14, marginBottom: 20 },
 });
