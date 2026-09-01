@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { colors } from "../theme/colors";
-import { SECTIONS, TIPS, tipsInSection } from "../content/library";
+import { ROTATION, SECTIONS, TIPS, rotationNumber, tipsInSection } from "../content/library";
 import TipCard from "../components/TipCard";
 
 /**
@@ -25,7 +25,9 @@ export default function LibraryScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
       <Text style={styles.intro}>
-        Всё, к чему подталкивает приложение, и почему. {TIPS.length} подсказок в четырёх разделах.
+        Всё, к чему подталкивает приложение, и почему. {TIPS.length} подсказок в четырёх разделах,
+        из них {ROTATION.length} пронумерованы и по очереди показываются на «Отчёте» — номер слева
+        от подсказки её и обозначает.
       </Text>
 
       {SECTIONS.map((section) => {
@@ -52,6 +54,7 @@ export default function LibraryScreen() {
                   <TipCard
                     key={tip.id}
                     tip={tip}
+                    number={rotationNumber(tip.id)}
                     expanded={openTips.has(tip.id)}
                     onToggle={() => toggleTip(tip.id)}
                   />

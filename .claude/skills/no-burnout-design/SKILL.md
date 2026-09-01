@@ -63,9 +63,15 @@ new storage mechanism.
 Content lives in `src/content/library.ts` as data, never inline in a screen.
 A tip is a one-line `short`, a `full` paragraph revealed on tap, an optional
 `caveat` for anything the source states more confidently than it has earned,
-and a `daily` flag deciding whether it can be the tip of the day. Render them
-through `src/components/TipCard.tsx` so the reference and the daily tip stay
-visually identical. `src/lib/tipOfDay.ts` picks by date, never at random.
+and a `rotate` flag deciding whether it joins the rotation. Render every tip
+through `src/components/TipCard.tsx` so the reference and the rotating tip
+stay visually identical.
+
+`src/lib/useRotatingTip.ts` steps the rotation forward on every app open — JS
+start and `background → active`, never at random — and the number beside a tip
+is what makes a non-random order legible. A new tip appended to `TIPS` needs
+no other change; adding one mid-list renumbers everything after it, which is
+fine but worth knowing.
 
 ## Component conventions
 

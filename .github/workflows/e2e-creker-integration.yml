@@ -185,7 +185,7 @@ jobs:
           # top-level debug dir Maestro prints on a failed assertion), so this
           # widens the search instead of guessing a fixed depth.
           find "$HOME/.maestro" -iname "*.png" 2>/dev/null || true
-          for NAME in today backup backup-share-sheet tip-of-day library; do
+          for NAME in today backup backup-share-sheet tip-1 tip-2 library; do
             SHOT=$(find "$HOME" . -iname "$NAME.png" 2>/dev/null | head -n 1)
             echo "Found $NAME: $SHOT"
             [ -n "$SHOT" ] && cp "$SHOT" "./$NAME-screenshot.png" || true

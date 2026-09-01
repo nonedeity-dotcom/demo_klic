@@ -17,6 +17,7 @@ const KEYS = {
   rewardOptions: "reward-options-v1",
   rewards: "rewards-log-v1",
   screenTimeLimit: "screen-time-limit-minutes-v1",
+  tipCursor: "tip-cursor-v1",
 };
 
 export const DEFAULT_SCREEN_TIME_LIMIT_MIN = 180; // 3h/day, matches no particular study — just a sane starting point
@@ -314,6 +315,29 @@ export const api = {
       const reward: Reward = { id: uid(), date, text };
       await write(KEYS.rewards, [...rewards, reward]);
       return reward;
+    });
+  },
+
+  /**
+   * Where the tip rotation currently stands, as a 0-based index.
+   *
+   * Deliberately left out of the backup: this is a bookmark for one device,
+   * not history worth carrying to a new phone — restoring someone else's
+   * position in the loop would mean nothing.
+   */
+  async getTipCursor(): Promise<number> {
+    return read(KEYS.tipCursor, 0);
+  },
+  /** Steps to the next tip and returns its index, wrapping at the end. */
+  async advanceTipCursor(poolSize: number): Promise<number> {
+    if (poolSize <= 0) return 0;
+    return withKeyLock(KEYS.tipCursor, async () => {
+      // -1 as the default, so the very first launch lands on tip 1 rather
+      // than skipping straight to the second one.
+      const current = await read<number>(KEYS.tipCursor, -1);
+      const next = (((current + 1) % poolSize) + poolSize) % poolSize;
+      await write(KEYS.tipCursor, next);
+      return next;
     });
   },
 

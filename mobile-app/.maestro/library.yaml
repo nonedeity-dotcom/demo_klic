@@ -1,14 +1,20 @@
-# The reference and the tip of the day, on a device.
+# The tip rotation and the reference, on a device.
 #
-# The tip is derived from the date, so its text can't be asserted literally —
-# what matters is that the block renders, that tapping it reveals more than
-# the one line, and that the reference behind it opens with its four sections.
+# The tip advances on every open, so its number is the assertion: a clean
+# install starts at 1, and relaunching moves it to 2. That covers both ways
+# the counter can step — a genuine cold start re-runs the JS, and a relaunch
+# of a process Android kept alive comes back through the foreground handler.
+# The text itself isn't asserted; the number is what has to be right.
 appId: com.yourcompany.noburnout
 ---
+- launchApp:
+    clearState: true
+- assertVisible: "Подсказка 1 из \\d+"
+- takeScreenshot: tip-1
 - launchApp
-# Отчёт is the default tab, and the tip of the day sits at the top of it.
-- assertVisible: "Подсказка дня"
-- takeScreenshot: tip-of-day
+- assertVisible: "Подсказка 2 из \\d+"
+- takeScreenshot: tip-2
+
 - tapOn: "Настройки"
 - tapOn: "Подсказки"
 - assertVisible: "Фокус"

@@ -7,7 +7,7 @@ import { dateNDaysAgo, weekdayLabel } from "../lib/date";
 import { plural } from "../lib/plural";
 import { useTodayKey } from "../lib/useTodayKey";
 import TwoCurves from "../components/TwoCurves";
-import TipOfDay from "../components/TipOfDay";
+import RotatingTip from "../components/RotatingTip";
 import type { Habit, HabitLog, FocusSession } from "../types";
 
 export default function ReportScreen() {
@@ -88,8 +88,9 @@ export default function ReportScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
       {/* First thing on the first screen: one line, and the reasoning behind
-          it if you tap. The rest of the library lives in settings. */}
-      <TipOfDay />
+          it if you tap. Steps to the next one each time the app is opened;
+          the rest of the library lives in settings. */}
+      <RotatingTip />
 
       <View style={styles.hero}>
         <TwoCurves />

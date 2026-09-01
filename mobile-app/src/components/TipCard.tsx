@@ -12,10 +12,13 @@ export default function TipCard({
   tip,
   expanded,
   onToggle,
+  number,
 }: {
   tip: Tip;
   expanded: boolean;
   onToggle: () => void;
+  /** Position in the rotation, when the tip has one. */
+  number?: number | null;
 }) {
   return (
     <Pressable
@@ -26,6 +29,9 @@ export default function TipCard({
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
       <View style={styles.row}>
+        {/* The rotation advances on every app open, so the number is the only
+            way to tell where in the loop you are. */}
+        {number != null && <Text style={styles.number}>{number}</Text>}
         <Text style={styles.short}>{tip.short}</Text>
         <Feather
           name={expanded ? "chevron-up" : "chevron-down"}
@@ -56,6 +62,13 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.75 },
   row: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  number: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
+    minWidth: 18,
+    marginTop: 3,
+  },
   short: { color: colors.text, fontSize: 14, lineHeight: 19, flex: 1 },
   chevron: { marginTop: 2 },
   full: { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginTop: 10 },
