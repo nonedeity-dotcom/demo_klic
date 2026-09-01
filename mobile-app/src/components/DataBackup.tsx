@@ -135,6 +135,12 @@ export default function DataBackup() {
         Всё хранится только на этом телефоне. Сохрани копию перед переустановкой или переездом на новый.
       </Text>
 
+      {/* Above the buttons, not below them: this section is the last thing on a
+          scrolling screen, so a note rendered underneath landed off the bottom
+          edge (measured at y 615-591 on a 640px device) — you tapped the
+          button and the confirmation appeared where you could not see it. */}
+      {note && <Text style={[styles.note, note.tone === "error" && styles.noteError]}>{note.text}</Text>}
+
       <View style={styles.buttonRow}>
         <Pressable
           onPress={onExport}
@@ -188,7 +194,6 @@ export default function DataBackup() {
 
       {busy === "import" && !pending && <ActivityIndicator color={colors.textMuted} style={{ marginTop: 12 }} />}
 
-      {note && <Text style={[styles.note, note.tone === "error" && styles.noteError]}>{note.text}</Text>}
     </View>
   );
 }
@@ -218,6 +223,6 @@ const styles = StyleSheet.create({
   pendingHint: { color: colors.textMuted, fontSize: 11, lineHeight: 16 },
   cancel: { alignItems: "center", paddingVertical: 4 },
   cancelText: { color: colors.textMuted, fontSize: 12 },
-  note: { color: colors.accentGreen, fontSize: 12, lineHeight: 17, marginTop: 12 },
+  note: { color: colors.accentGreen, fontSize: 12, lineHeight: 17, marginBottom: 12 },
   noteError: { color: colors.accent },
 });
