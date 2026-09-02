@@ -10,7 +10,7 @@ import { useTodayKey } from "../lib/useTodayKey";
 import { weekKey, dayOfWeek } from "../lib/week";
 import RotatingTip from "../components/RotatingTip";
 import StreakRing from "../components/StreakRing";
-import MonthGrid from "../components/MonthGrid";
+import HistoryCalendar from "../components/HistoryCalendar";
 import type { Habit, HabitLog, FocusSession, WeeklyReview } from "../types";
 
 export default function ReportScreen({ navigation }: { navigation: { navigate: (screen: string) => void } }) {
@@ -116,10 +116,12 @@ export default function ReportScreen({ navigation }: { navigation: { navigate: (
       {/* The number, how far it is between milestones, and what that stretch
           is called — one block instead of the milestone dots, the "N из M до
           вехи" line and the phase card that all said this separately. */}
-      <StreakRing streak={streak} hasHistory={hasHistory} />
-
-      <Text style={styles.sectionLabel}>Последние 4 недели</Text>
-      <MonthGrid today={today} habits={habits} logs={streakLogs} />
+      {/* The calendar folds away inside the streak card: it is the same
+          subject as the number above it, and it is not what the screen is
+          opened for. */}
+      <StreakRing streak={streak} hasHistory={hasHistory}>
+        <HistoryCalendar today={today} habits={habits} />
+      </StreakRing>
 
       {/* Only while the ring is aimed at something nearer — once the next
           milestone IS 66 the two would be the same bar twice. */}

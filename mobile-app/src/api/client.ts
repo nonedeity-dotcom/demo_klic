@@ -32,7 +32,17 @@ const KEYS = {
   focusIntervals: "focus-intervals-v1",
   reviews: "weekly-reviews-v1",
   tasks: "tasks-v1",
+  calendarPrefs: "calendar-prefs-v1",
 };
+
+export interface CalendarPrefs {
+  /** Whether the history calendar is unfolded under the streak. */
+  open: boolean;
+  mode: "month" | "weeks";
+}
+
+/** Folded away by default — the calendar is not what you open the app for. */
+export const DEFAULT_CALENDAR_PREFS: CalendarPrefs = { open: false, mode: "month" };
 
 export interface FocusIntervals {
   workMin: number;
@@ -412,6 +422,31 @@ export const api = {
       await write(KEYS.rewards, [...rewards, reward]);
       return reward;
     });
+  },
+
+  async getCalendarPrefs(): Promise<CalendarPrefs> {
+    const stored = await read<Partial<CalendarPrefs>>(KEYS.calendarPrefs, {});
+    return {
+      open: stored.open === true,
+      mode: stored.mode === "weeks" ? "weeks" : "month",
+    };
+  },
+  async setCalendarPrefs(prefs: CalendarPrefs): Promise<CalendarPrefs> {
+    await write(KEYS.calendarPrefs, prefs);
+    return prefs;
+  },
+  /**
+   * The oldest day with a tick, so the calendar knows how far back it can be
+   * paged. Null when nothing has been ticked at all.
+   */
+  async getEarliestLogDate(): Promise<string | null> {
+    const logs = await read<HabitLog[]>(KEYS.habitLog, []);
+    let earliest: string | null = null;
+    for (const l of logs) {
+      if (!l.done) continue;
+      if (earliest === null || l.date < earliest) earliest = l.date;
+    }
+    return earliest;
   },
 
   async getFocusIntervals(): Promise<FocusIntervals> {

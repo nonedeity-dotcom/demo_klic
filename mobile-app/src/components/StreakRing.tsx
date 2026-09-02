@@ -18,7 +18,16 @@ const CIRC = 2 * Math.PI * RADIUS;
  * shapes — the milestone dots, the "N из M дней до вехи" line, and the phase
  * card underneath them.
  */
-export default function StreakRing({ streak, hasHistory }: { streak: number; hasHistory: boolean }) {
+export default function StreakRing({
+  streak,
+  hasHistory,
+  children,
+}: {
+  streak: number;
+  hasHistory: boolean;
+  /** Rendered inside the card, under the milestone line — the calendar. */
+  children?: React.ReactNode;
+}) {
   const phase = phaseFor(streak, hasHistory);
   const { next, fraction } = milestoneProgress(streak);
   const accent = phase.tone === "steady" ? colors.accentGreen : colors.accent;
@@ -58,6 +67,8 @@ export default function StreakRing({ streak, hasHistory }: { streak: number; has
           до вехи {next} — {next - streak} {plural(next - streak, ["день", "дня", "дней"])}
         </Text>
       )}
+
+      {children}
     </View>
   );
 }

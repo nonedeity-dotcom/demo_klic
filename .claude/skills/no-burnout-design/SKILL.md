@@ -37,8 +37,8 @@ reserved for focus-session data).
 Bottom bar, in order:
 
 1. **ReportScreen** — rotating tip, one streak card (ring to the next
-   milestone + phase), a four-week grid, the bar to 66 days, focus sessions,
-   the weekly review row. Opens first.
+   milestone + phase + a collapsible calendar), the bar to 66 days, focus
+   sessions, the weekly review row. Opens first.
 2. **TodayScreen** — habit checklist for today, each habit optionally
    carrying a declared minimal version that can be ticked instead
 3. **FocusScreen** — focus timer (SVG ring) with editable work/break lengths
@@ -79,8 +79,8 @@ stay visually identical.
 
 The report used to say the same thing three times in a row — milestone dots,
 "N из M дней до вехи", and a phase card. `StreakRing` is the single block
-that answers "where am I"; `MonthGrid` is the single block that answers "how
-has it been going". Before adding a fourth progress indicator, check it isn't
+that answers "where am I", and `HistoryCalendar` — folded inside it — is the
+single block that answers "how has it been going". Before adding a fourth progress indicator, check it isn't
 a redraw of one of those two. The bar to 66 days is only rendered while the
 ring is aimed at something nearer, for exactly that reason.
 
