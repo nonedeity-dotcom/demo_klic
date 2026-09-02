@@ -7,6 +7,7 @@ import { api, DEFAULT_SCREEN_TIME_LIMIT_MIN } from "../api/client";
 import { colors } from "../theme/colors";
 import DataBackup from "../components/DataBackup";
 import NotificationAccess from "../components/NotificationAccess";
+import CrekerStatus from "../components/CrekerStatus";
 import {
   getReminderSettings,
   getReminderStatus,
@@ -127,6 +128,12 @@ export default function SettingsScreen({ navigation }: { navigation: { navigate:
         hint={reminderHint}
         onPress={() => navigation.navigate("Reminder")}
       />
+
+      <Text style={[styles.sectionLabel, styles.spaced]}>Creker</Text>
+      {/* The habit below ticks itself from creker's numbers, and every way that can
+          fail looks the same on the checklist — an unticked box. This says which
+          failure it is before the limit under it is worth adjusting. */}
+      <CrekerStatus />
 
       <Text style={[styles.sectionLabel, styles.spaced]}>Экранное время</Text>
       <View style={styles.limitCard}>

@@ -168,7 +168,12 @@ jobs:
             adb shell am instrument -w -e class com.creker.screentime.SeedTestDataTest com.creker.screentime.test/androidx.test.runner.AndroidJUnitRunner
             adb install -r ./app-release.apk
             echo "=== pm list packages (creker/noburnout) ===" && adb shell pm list packages | grep -E "creker|noburnout"
-            echo "=== adb shell content query (broad shell visibility) ===" && adb shell content query --uri content://com.creker.screentime.provider/device_usage --bind 0:s:$(date -u +%F) --bind 1:s:$(date -u +%F)
+            # Expected to print "No result found." now: creker decides per calling app,
+            # and the shell is not one of the apps the user allowed. That is the check
+            # working, not failing -- the real cross-app read is the Maestro flow below,
+            # which runs as no-burnout, the one package creker allows by default. Kept
+            # because a *successful* read here would mean the per-app gate is not holding.
+            echo "=== adb shell content query (expected: refused, shell is not an allowed app) ===" && adb shell content query --uri content://com.creker.screentime.provider/device_usage --bind 0:s:$(date -u +%F) --bind 1:s:$(date -u +%F)
             curl -Ls "https://get.maestro.mobile.dev" | bash
             (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/screentime-integration.yaml) || echo "screentime-integration FAILED" > flow-screentime.status
             (export PATH="$PATH:$HOME/.maestro/bin" && maestro test no-burnout/mobile-app/.maestro/data-backup.yaml) || echo "data-backup FAILED" > flow-backup.status

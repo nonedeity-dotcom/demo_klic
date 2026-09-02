@@ -56,5 +56,59 @@ class CrekerUsageModule : Module() {
       }
       results
     }
+
+    // Why there is no data, when there is none. getScreenTime deliberately flattens every
+    // failure into an empty list, which is right for the habit tick but useless when the
+    // user is asking "so is this working or not". Resolves to
+    // { installed, answered, denied, screenMillis, updatedAt } for one day:
+    //   installed = creker's provider is on this device at all
+    //   answered  = it returned a cursor (installed, permitted, and sharing with this app)
+    //   denied    = it refused us — no permission, or turned off for this app in creker
+    // screenMillis/updatedAt are null when there is no row for that day.
+    AsyncFunction("getStatus") { date: String ->
+      val context = appContext.reactContext
+        ?: return@AsyncFunction mapOf<String, Any?>("installed" to false, "answered" to false, "denied" to false)
+      val installed = context.packageManager.resolveContentProvider(AUTHORITY, 0) != null
+      if (!installed) {
+        return@AsyncFunction mapOf<String, Any?>("installed" to false, "answered" to false, "denied" to false)
+      }
+
+      val uri = Uri.parse("content://$AUTHORITY/device_usage")
+      var answered = false
+      var denied = false
+      var screenMillis: Long? = null
+      var updatedAt: Long? = null
+      try {
+        val cursor: Cursor? = context.contentResolver.query(uri, null, null, arrayOf(date, date), null)
+        if (cursor == null) {
+          // Installed, reachable, and it chose to say nothing: creker returns a null cursor
+          // for an app the user has not allowed.
+          denied = true
+        } else {
+          answered = true
+          cursor.use {
+            val millisIdx = it.getColumnIndex("screen_millis")
+            val updatedIdx = it.getColumnIndex("updated_at")
+            if (it.moveToFirst() && millisIdx >= 0) {
+              screenMillis = it.getLong(millisIdx)
+              updatedAt = if (updatedIdx >= 0) it.getLong(updatedIdx) else 0L
+            }
+          }
+        }
+      } catch (e: SecurityException) {
+        denied = true
+      } catch (e: Exception) {
+        // Installed but unreachable for some other reason: neither answered nor a refusal
+        // we can explain, so it stays "no answer" rather than being blamed on permissions.
+      }
+
+      mapOf<String, Any?>(
+        "installed" to true,
+        "answered" to answered,
+        "denied" to denied,
+        "screenMillis" to screenMillis,
+        "updatedAt" to updatedAt,
+      )
+    }
   }
 }
