@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { colors } from "../theme/colors";
-import { phaseFor, PHASE_RANGE } from "../lib/phase";
+import { emptyNotice } from "../lib/phase";
 import { milestoneProgress } from "../lib/streakProgress";
 import { plural } from "../lib/plural";
 
@@ -11,12 +11,13 @@ const RADIUS = (SIZE - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
 
 /**
- * The whole "where am I" answer in one block: the number, how far it is
- * between milestones, and what that stretch is called.
+ * The number and how far it is to the next milestone.
  *
- * Replaces three consecutive blocks that all said the same thing in different
- * shapes — the milestone dots, the "N из M дней до вехи" line, and the phase
- * card underneath them.
+ * It used to carry the current stretch's name and paragraph as well. Those moved to the
+ * bar below and the Этапы screen behind it, where all four stretches sit together — here
+ * the same paragraph was re-read every day and said nothing new. What stays is the notice
+ * for a streak of zero, which is not a stretch but the absence of one: "never started" and
+ * "just broke it" need different words, and neither belongs on a list of phases.
  */
 export default function StreakRing({
   streak,
@@ -28,9 +29,8 @@ export default function StreakRing({
   /** Rendered inside the card, under the milestone line — the calendar. */
   children?: React.ReactNode;
 }) {
-  const phase = phaseFor(streak, hasHistory);
   const { next, fraction } = milestoneProgress(streak);
-  const accent = phase.tone === "steady" ? colors.accentGreen : colors.accent;
+  const notice = streak <= 0 ? emptyNotice(hasHistory) : null;
   const ringColor = streak > 0 ? colors.accentGreen : colors.cardBorder;
 
   return (
@@ -56,13 +56,14 @@ export default function StreakRing({
         </View>
       </View>
 
-      <Text style={[styles.phaseTitle, { color: accent }]}>
-        {phase.title}
-        {PHASE_RANGE[phase.id] ? ` · ${PHASE_RANGE[phase.id]}` : ""}
-      </Text>
-      <Text style={styles.phaseBody}>{phase.body}</Text>
+      {notice && (
+        <>
+          <Text style={styles.noticeTitle}>{notice.title}</Text>
+          <Text style={styles.noticeBody}>{notice.body}</Text>
+        </>
+      )}
 
-      {next !== null && phase.id !== "empty" && (
+      {next !== null && (streak > 0 || hasHistory) && (
         <Text style={styles.nextLine}>
           до вехи {next} — {next - streak} {plural(next - streak, ["день", "дня", "дней"])}
         </Text>
@@ -79,7 +80,7 @@ const styles = StyleSheet.create({
   ringCenter: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
   number: { color: colors.accentGreen, fontSize: 44, fontWeight: "700", letterSpacing: -1 },
   numberLabel: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
-  phaseTitle: { fontSize: 14, fontWeight: "600", marginTop: 16, textAlign: "center" },
-  phaseBody: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6, textAlign: "center" },
+  noticeTitle: { color: colors.accent, fontSize: 14, fontWeight: "600", marginTop: 16, textAlign: "center" },
+  noticeBody: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6, textAlign: "center" },
   nextLine: { color: colors.textMuted, fontSize: 11, marginTop: 12 },
 });

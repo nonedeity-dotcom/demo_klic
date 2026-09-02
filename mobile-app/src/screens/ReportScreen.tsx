@@ -2,14 +2,15 @@ import { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, STREAK_MILESTONES } from "../api/client";
-import { AUTOPILOT_DAYS } from "../lib/streakProgress";
 import { colors } from "../theme/colors";
 import { dateNDaysAgo } from "../lib/date";
 import { plural } from "../lib/plural";
+import { computeStreak, STREAK_WINDOW_DAYS } from "../lib/streak";
 import { useTodayKey } from "../lib/useTodayKey";
 import { weekKey, dayOfWeek } from "../lib/week";
 import RotatingTip from "../components/RotatingTip";
 import StreakRing from "../components/StreakRing";
+import PhaseBar from "../components/PhaseBar";
 import HistoryCalendar from "../components/HistoryCalendar";
 import type { Habit, HabitLog, FocusSession, WeeklyReview } from "../types";
 
@@ -19,7 +20,10 @@ export default function ReportScreen({ navigation }: { navigation: { navigate: (
   // rolls onto the new week instead of freezing on yesterday.
   const today = useTodayKey();
   const weekStart = dateNDaysAgo(6);
-  const streakWindowStart = dateNDaysAgo(120); // long enough to reach the 66-day milestone
+  // One day wider than computeStreak walks, so the loop can never run off the end of what
+  // was fetched. The Этапы screen builds the same key from the same constant, and shares
+  // this cache entry rather than refetching four months of logs on open.
+  const streakWindowStart = dateNDaysAgo(STREAK_WINDOW_DAYS);
 
   const { data: habits = [] } = useQuery<Habit[]>({ queryKey: ["habits"], queryFn: () => api.getHabits() as Promise<Habit[]> });
   // The date range belongs in the key: with a constant "week"/"streak" key,
@@ -61,27 +65,8 @@ export default function ReportScreen({ navigation }: { navigation: { navigate: (
   // Friday onwards: earlier in the week there is not much of a week to review.
   const reviewDue = !reviewWritten && dayOfWeek(today) >= 5;
 
-  // How many habits a day needs to "count". With no habits at all there is
-  // nothing to be consistent about: the old `done >= Math.ceil(0 / 2)` was
-  // `0 >= 0` — always true — so an empty checklist reported a 120-day streak
-  // with every milestone ticked, and every visit here flashed that while the
-  // habits query was still loading.
-  const dayTarget = Math.ceil(habits.length / 2);
-
-  let streak = 0;
-  if (dayTarget > 0) {
-    for (let i = 0; i < 120; i++) {
-      const day = dateNDaysAgo(i);
-      const done = streakLogs.filter((l) => l.date === day && countsFor(l)).length;
-      if (done >= dayTarget) streak++;
-      // Today still being unfinished shouldn't break yesterday's streak.
-      else if (i === 0) continue;
-      else break;
-    }
-  }
-
+  const streak = computeStreak(habits, streakLogs);
   const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) ?? null;
-  const autopilotPct = Math.min(100, Math.round((streak / AUTOPILOT_DAYS) * 100));
   const [justCelebrated, setJustCelebrated] = useState<number | null>(null);
 
   useEffect(() => {
@@ -123,21 +108,10 @@ export default function ReportScreen({ navigation }: { navigation: { navigate: (
         <HistoryCalendar today={today} habits={habits} />
       </StreakRing>
 
-      {/* Only while the ring is aimed at something nearer — once the next
-          milestone IS 66 the two would be the same bar twice. */}
-      {nextMilestone !== null && nextMilestone < AUTOPILOT_DAYS && (
-        <View style={styles.autopilotCard}>
-          <View style={styles.autopilotTrack}>
-            <View style={[styles.autopilotFill, { width: `${autopilotPct}%` }]} />
-          </View>
-          <View style={styles.autopilotRow}>
-            <Text style={styles.subtleSmall}>
-              {streak} {plural(streak, ["день", "дня", "дней"])}
-            </Text>
-            <Text style={styles.subtleSmall}>{AUTOPILOT_DAYS} — привычка держится сама</Text>
-          </View>
-        </View>
-      )}
+      {/* The whole road with its stretches marked. Shown at every streak length: the ring
+          measures from the previous milestone, so it can't say how far along the 66 days
+          you are, and that is exactly what this is for. */}
+      <PhaseBar streak={streak} onPress={() => navigation.navigate("Phases")} />
 
       <View style={styles.sessionsCard}>
         <View style={{ flex: 1 }}>
@@ -203,17 +177,6 @@ const styles = StyleSheet.create({
   },
   celebrationEmoji: { fontSize: 24 },
   celebrationText: { color: colors.text, fontSize: 12, flex: 1, lineHeight: 17 },
-
-  autopilotCard: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    marginTop: 10,
-  },
-  autopilotTrack: { height: 6, borderRadius: 3, backgroundColor: colors.cardBorder, overflow: "hidden" },
-  autopilotFill: { height: "100%", borderRadius: 3, backgroundColor: colors.accentGreen },
-  autopilotRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
 
   sessionsCard: {
     flexDirection: "row",

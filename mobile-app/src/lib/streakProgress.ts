@@ -23,6 +23,3 @@ export function milestoneProgress(streak: number): MilestoneProgress {
   const span = next - previous;
   return { next, previous, fraction: span > 0 ? Math.min(1, Math.max(0, (streak - previous) / span)) : 0 };
 }
-
-/** The long horizon: the last milestone is the "runs by itself" mark. */
-export const AUTOPILOT_DAYS = STREAK_MILESTONES[STREAK_MILESTONES.length - 1];
