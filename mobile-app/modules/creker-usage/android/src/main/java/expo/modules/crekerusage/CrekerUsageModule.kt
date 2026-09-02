@@ -20,8 +20,12 @@ class CrekerUsageModule : Module() {
     Name("CrekerUsage")
 
     // fromDate/toDate: "yyyy-MM-dd", inclusive. Resolves to a list of
-    // { date: string, screenMillis: number } — one entry per day creker has synced
-    // data for; missing days are simply absent from the list.
+    // { date: string, screenMillis: number, updatedAt: number } — one entry per day
+    // creker has synced data for; missing days are simply absent from the list.
+    // updatedAt is epoch millis up to which screenMillis for that day is complete
+    // (not when the row was written), so a caller can tell a measured zero from a
+    // day creker simply hasn't caught up on. Older creker builds have no such
+    // column; those rows come back with updatedAt = 0, meaning "unknown".
     AsyncFunction("getScreenTime") { fromDate: String, toDate: String ->
       val resolver = appContext.reactContext?.contentResolver
         ?: return@AsyncFunction emptyList<Map<String, Any>>()
@@ -32,9 +36,18 @@ class CrekerUsageModule : Module() {
         cursor?.use {
           val dateIdx = it.getColumnIndex("date")
           val millisIdx = it.getColumnIndex("screen_millis")
+          // Absent on creker builds that predate the column — treat every row as
+          // "unknown" (0) rather than dropping the data we do have.
+          val updatedIdx = it.getColumnIndex("updated_at")
           if (dateIdx >= 0 && millisIdx >= 0) {
             while (it.moveToNext()) {
-              results.add(mapOf("date" to it.getString(dateIdx), "screenMillis" to it.getLong(millisIdx)))
+              results.add(
+                mapOf(
+                  "date" to it.getString(dateIdx),
+                  "screenMillis" to it.getLong(millisIdx),
+                  "updatedAt" to if (updatedIdx >= 0) it.getLong(updatedIdx) else 0L,
+                )
+              )
             }
           }
         }

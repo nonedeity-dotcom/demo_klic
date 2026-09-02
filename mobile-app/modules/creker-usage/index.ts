@@ -1,8 +1,21 @@
 import { Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
 
+export interface CrekerUsageDay {
+  date: string;
+  screenMillis: number;
+  /**
+   * Epoch millis up to which `screenMillis` is complete for that day — creker's
+   * own contract calls this `updated_at`, and it is *not* the moment the row was
+   * written. `0` means unknown (a creker build older than the column, or a day it
+   * never finished measuring). Without this, a row that reads 0 ms is
+   * indistinguishable from a day creker hasn't caught up on yet.
+   */
+  updatedAt: number;
+}
+
 interface CrekerUsageNativeModule {
-  getScreenTime(fromDate: string, toDate: string): Promise<{ date: string; screenMillis: number }[]>;
+  getScreenTime(fromDate: string, toDate: string): Promise<CrekerUsageDay[]>;
 }
 
 // requireOptionalNativeModule (not requireNativeModule) — returns null instead of
@@ -17,13 +30,13 @@ const native = Platform.OS === "android" ? requireOptionalNativeModule<CrekerUsa
  * apps. Resolves to [] (never rejects) whenever creker isn't installed or has no
  * data for the range — that's the expected common case, not a failure.
  */
-export async function getCrekerScreenTime(
-  fromDate: string,
-  toDate: string,
-): Promise<{ date: string; screenMillis: number }[]> {
+export async function getCrekerScreenTime(fromDate: string, toDate: string): Promise<CrekerUsageDay[]> {
   if (!native) return [];
   try {
-    return await native.getScreenTime(fromDate, toDate);
+    const rows = await native.getScreenTime(fromDate, toDate);
+    // Older native side / older creker may omit updatedAt entirely; normalise it
+    // here so every caller can treat the field as present and 0 as "unknown".
+    return rows.map((row) => ({ ...row, updatedAt: Number(row.updatedAt) || 0 }));
   } catch {
     return [];
   }
