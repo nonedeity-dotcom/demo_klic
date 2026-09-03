@@ -5,10 +5,9 @@ import { Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 
-import TodayScreen from "../screens/TodayScreen";
+import ChecklistScreen from "../screens/ChecklistScreen";
 import FocusScreen from "../screens/FocusScreen";
 import EnergyScreen from "../screens/EnergyScreen";
-import TriggersScreen from "../screens/TriggersScreen";
 import QuestionScreen from "../screens/QuestionScreen";
 import ReportScreen from "../screens/ReportScreen";
 import ReminderScreen from "../screens/ReminderScreen";
@@ -43,21 +42,21 @@ function Tabs() {
         tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.cardBorder },
-        // Six tabs instead of seven now that the reminder lives in settings —
-        // ~53px each on a 320px screen instead of ~45, so the labels no longer
-        // need the 8px that "Напомнить" forced them down to.
-        tabBarLabelStyle: { fontSize: 9 },
+        // Five tabs now that the checklist and the triggers share one — ~64px each on a
+        // 320px screen instead of ~53, so the labels can come back up from the 9px that
+        // six of them forced.
+        tabBarLabelStyle: { fontSize: 11 },
         tabBarItemStyle: { paddingHorizontal: 0 },
       }}
     >
-      {/* Отчёт first: it opens on the tip of the day, which is the one thing
-          worth seeing before you have done anything. Чек-лист sits right
-          next to it since that is what the day actually runs on. */}
+      {/* Отчёт first: it opens on the tip of the day, which is the one thing worth seeing
+          before you have done anything. Чек-лист sits right next to it since that is what
+          the day actually runs on — and it now holds the triggers too, on a switch: two
+          lists about the same day, which never needed a bottom-bar slot each. */}
       <Tab.Screen name="Отчёт" component={ReportScreen} options={{ tabBarIcon: icon("bar-chart-2") }} />
-      <Tab.Screen name="Чек-лист" component={TodayScreen} options={{ tabBarIcon: icon("check-square") }} />
+      <Tab.Screen name="Чек-лист" component={ChecklistScreen} options={{ tabBarIcon: icon("check-square") }} />
       <Tab.Screen name="Фокус" component={FocusScreen} options={{ tabBarIcon: icon("target") }} />
       <Tab.Screen name="Энергия" component={EnergyScreen} options={{ tabBarIcon: icon("activity") }} />
-      <Tab.Screen name="Триггеры" component={TriggersScreen} options={{ tabBarIcon: icon("zap-off") }} />
       <Tab.Screen name="Вопрос" component={QuestionScreen} options={{ tabBarIcon: icon("help-circle") }} />
     </Tab.Navigator>
   );

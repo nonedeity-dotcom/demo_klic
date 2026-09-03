@@ -75,7 +75,7 @@ export default function TriggersScreen() {
   const removedCount = triggers.filter((t) => t.removed).length;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 }}>
       {/* Same as on the checklist: the pencil and the bin live behind one button rather than
           sitting in every row next to the thing you tap. */}
       <View style={styles.headerRow}>

@@ -131,7 +131,7 @@ export default function TodayScreen() {
   const doneCount = logs.filter((l) => l.done && habitIds.has(l.habitId)).length;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 }}>
       {/* The pencil and the bin used to sit in every row, permanently, next to the thing you
           tap ten times a week. One button puts them behind a deliberate act instead. */}
       <View style={styles.headerRow}>
