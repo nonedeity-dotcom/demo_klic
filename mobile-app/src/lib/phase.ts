@@ -114,3 +114,42 @@ export function emptyNotice(hasHistory: boolean): { title: string; body: string 
         body: "Отметь первую привычку — здесь появится цепочка дней и то, на каком ты этапе.",
       };
 }
+
+export interface PhaseProgress {
+  /** The stretch the streak is in, or null when there is no streak. */
+  step: PhaseStep | null;
+  /** The stretch after it, or null once there is nothing further. */
+  next: PhaseStep | null;
+  /** Days until `next` starts, or null when there is none. */
+  daysToNext: number | null;
+  /** 0..1 through the current stretch — full on its last day. */
+  fraction: number;
+}
+
+/**
+ * How far through the current stretch the streak is.
+ *
+ * This is what the ring fills with. It used to fill towards the next *milestone* (7, 14, 30,
+ * 66) while the card's colour, drawing and bar all spoke about stretches (1, 4, 22, 66) —
+ * two different scales on one card, which is exactly why the ring got read as "time left in
+ * this phase" when it never meant that.
+ *
+ * The open-ended last stretch reads as full: there is nothing further to fill towards.
+ */
+export function phaseProgress(streak: number): PhaseProgress {
+  const step = phaseStepFor(streak);
+  if (!step) return { step: null, next: null, daysToNext: null, fraction: 0 };
+
+  const index = PHASE_STEPS.findIndex((s) => s.id === step.id);
+  const next = PHASE_STEPS[index + 1] ?? null;
+  if (step.toDay === null || !next) return { step, next: null, daysToNext: null, fraction: 1 };
+
+  const span = step.toDay - step.fromDay + 1;
+  const done = streak - step.fromDay + 1;
+  return {
+    step,
+    next,
+    daysToNext: next.fromDay - streak,
+    fraction: Math.min(1, Math.max(0, done / span)),
+  };
+}

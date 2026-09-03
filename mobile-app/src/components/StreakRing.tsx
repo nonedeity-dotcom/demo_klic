@@ -1,9 +1,8 @@
 import { View, Text, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { colors, phaseColors, withAlpha } from "../theme/colors";
-import { emptyNotice, phaseStepFor } from "../lib/phase";
+import { emptyNotice, phaseProgress } from "../lib/phase";
 import PhaseArt from "./PhaseArt";
-import { milestoneProgress } from "../lib/streakProgress";
 import { plural } from "../lib/plural";
 
 const SIZE = 150;
@@ -35,8 +34,7 @@ export default function StreakRing({
    */
   children?: React.ReactNode | ((tint: string) => React.ReactNode);
 }) {
-  const { next, fraction } = milestoneProgress(streak);
-  const step = phaseStepFor(streak);
+  const { step, next, daysToNext, fraction } = phaseProgress(streak);
   const notice = step === null ? emptyNotice(hasHistory) : null;
   // The ring, the card's edge and the calendar's toggle all take the stretch's colour, so
   // which one you're in registers before any of the words do. The stretch is not *named*
@@ -63,14 +61,14 @@ export default function StreakRing({
         </Svg>
         {step && (
           <View style={styles.art} pointerEvents="none">
-            <PhaseArt id={step.id} size={ART_SIZE} fadeBottom />
+            <PhaseArt id={step.id} size={ART_SIZE} dim="center" />
           </View>
         )}
-        {/* The number sits low over the drawing rather than dead centre: at the middle it
-            landed on the busiest part of every one of them. */}
+        {/* Just the number, small enough to sit on the drawing rather than cover it. The
+            middle of every one of these drawings is the busiest part, so PhaseArt darkens
+            it under the digits instead of the number needing a panel of its own. */}
         <View style={styles.ringCenter}>
           <Text style={styles.number}>{streak}</Text>
-          <Text style={styles.numberLabel}>{plural(streak, ["день", "дня", "дней"])} подряд</Text>
         </View>
       </View>
 
@@ -81,9 +79,11 @@ export default function StreakRing({
         </>
       )}
 
-      {next !== null && (streak > 0 || hasHistory) && (
+      {/* Names the ring's own target. It used to name the next milestone while the ring
+          filled towards something else entirely. */}
+      {next !== null && daysToNext !== null && (
         <Text style={styles.nextLine}>
-          до вехи {next} — {next - streak} {plural(next - streak, ["день", "дня", "дней"])}
+          до этапа «{next.title}» — {daysToNext} {plural(daysToNext, ["день", "дня", "дней"])}
         </Text>
       )}
 
@@ -105,9 +105,8 @@ const styles = StyleSheet.create({
   ringWrap: { width: SIZE, height: SIZE, justifyContent: "center", alignItems: "center" },
   // Under the ring's own stroke, so the arc always reads on top of the drawing.
   art: { position: "absolute", width: ART_SIZE, height: ART_SIZE, borderRadius: ART_SIZE / 2, overflow: "hidden" },
-  ringCenter: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "flex-end", paddingBottom: 16 },
-  number: { color: colors.text, fontSize: 44, fontWeight: "700", letterSpacing: -1 },
-  numberLabel: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  ringCenter: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  number: { color: colors.text, fontSize: 26, fontWeight: "700", letterSpacing: -0.5 },
   noticeTitle: { color: colors.accent, fontSize: 14, fontWeight: "600", marginTop: 16, textAlign: "center" },
   noticeBody: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6, textAlign: "center" },
   nextLine: { color: colors.textMuted, fontSize: 11, marginTop: 12 },

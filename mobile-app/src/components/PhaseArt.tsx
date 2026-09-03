@@ -28,16 +28,16 @@ import { colors, phaseColors, withAlpha } from "../theme/colors";
 export default function PhaseArt({
   id,
   size,
-  fadeBottom = false,
+  dim,
 }: {
   id: PhaseId;
   size: number;
   /**
-   * Darkens the lower third. Set where the streak number is printed on top: over a lit sun
-   * or a rocket's exhaust the digits were unreadable, and a flat panel behind them would
-   * have cut a visible straight edge across the disc.
+   * Darkens part of the drawing where something is printed on top of it. Over a lit sun or
+   * a rocket's exhaust the digits were unreadable, and a flat panel behind them would cut a
+   * visible straight edge across the disc — this fades instead.
    */
-  fadeBottom?: boolean;
+  dim?: "bottom" | "center";
 }) {
   const tint = phaseColors[id];
   // Gradient ids share one document on web, where four of these render side by side on the
@@ -45,6 +45,7 @@ export default function PhaseArt({
   const glowId = `phase-glow-${id}`;
   const discId = `phase-disc-${id}`;
   const scrimId = `phase-scrim-${id}`;
+  const centreScrimId = `phase-scrim-centre-${id}`;
   const clipId = `phase-clip-${id}`;
 
   return (
@@ -66,6 +67,12 @@ export default function PhaseArt({
           <Stop offset="0" stopColor={colors.bg} stopOpacity="0" />
           <Stop offset="1" stopColor={colors.bg} stopOpacity="0.88" />
         </LinearGradient>
+        {/* Fades out well before the rim, so the drawing stays visible around the number. */}
+        <RadialGradient id={centreScrimId} cx="50%" cy="50%" r="50%">
+          <Stop offset="0" stopColor={colors.bg} stopOpacity="0.82" />
+          <Stop offset="0.34" stopColor={colors.bg} stopOpacity="0.6" />
+          <Stop offset="0.62" stopColor={colors.bg} stopOpacity="0" />
+        </RadialGradient>
         <ClipPath id={clipId}>
           <Circle cx="50" cy="50" r="50" />
         </ClipPath>
@@ -81,7 +88,8 @@ export default function PhaseArt({
         {id === "dip" && <Whirlpool tint={tint} />}
         {id === "plateau" && <Sunrise tint={tint} />}
         {id === "autopilot" && <Rocket tint={tint} />}
-        {fadeBottom && <Rect x="0" y="40" width="100" height="60" fill={`url(#${scrimId})`} />}
+        {dim === "bottom" && <Rect x="0" y="40" width="100" height="60" fill={`url(#${scrimId})`} />}
+        {dim === "center" && <Circle cx="50" cy="50" r="50" fill={`url(#${centreScrimId})`} />}
       </G>
     </Svg>
   );
