@@ -6,17 +6,41 @@ import { api } from "../api/client";
 import { colors } from "../theme/colors";
 import { confirmDestructive } from "../lib/confirm";
 import { useTodayKey } from "../lib/useTodayKey";
+import { plural } from "../lib/plural";
+import { weekStart } from "../lib/week";
+import {
+  MAX_TARGET_COUNT,
+  habitGroup,
+  habitTarget,
+  habitsThatDecideTheDay,
+  logCount,
+  perDayTarget,
+  weeklyProgress,
+} from "../lib/habits";
 import { syncScreenTimeHabit } from "../integrations/screenTime";
-import type { Habit, HabitLog } from "../types";
+import type { Habit, HabitLog, HabitTarget, ItemGroup } from "../types";
+
+/**
+ * The three piles, in the order they are shown. Only the first decides the day; the reason
+ * for the split is that a list of ten things you eventually want is not a list of ten things
+ * you are doing, and judging today against the whole list makes the list unusable.
+ */
+const GROUPS: { id: ItemGroup; title: string; blurb: string }[] = [
+  { id: "now", title: "Ввожу сейчас", blurb: "по ним засчитывается день — держи этот список коротким" },
+  { id: "extra", title: "Дополнительно", blurb: "можно отмечать, на зачёт дня не влияет" },
+  { id: "later", title: "Потом", blurb: "план на будущее, отмечать пока нечего" },
+];
 
 export default function TodayScreen() {
   const qc = useQueryClient();
   const today = useTodayKey();
   const [editingId, setEditingId] = useState<string | null>(null);
-  /** Whether the per-row pencil and bin are on show. Off by default, and off again on exit. */
+  /** Whether the per-row controls and the add row are on show. Off by default. */
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState("");
   const [editMinimal, setEditMinimal] = useState("");
+  const [editGroup, setEditGroup] = useState<ItemGroup>("now");
+  const [editTarget, setEditTarget] = useState<HabitTarget>({ kind: "daily", count: 1 });
   const [newLabel, setNewLabel] = useState("");
   const [adding, setAdding] = useState(false);
 
@@ -30,39 +54,56 @@ export default function TodayScreen() {
     queryFn: () => api.getHabitLog(today, today) as Promise<HabitLog[]>,
   });
 
+  // A weekly habit's progress is a count of days, so the row needs this week, not just today.
+  const monday = weekStart(today);
+  const { data: weekLogs = [] } = useQuery<HabitLog[]>({
+    queryKey: ["habitLog", "week", monday, today],
+    queryFn: () => api.getHabitLog(monday, today) as Promise<HabitLog[]>,
+  });
+  const weekDates = datesBetween(monday, today);
+
   const invalidateHabits = () => qc.invalidateQueries({ queryKey: ["habits"] });
 
   useEffect(() => {
     if (habits.length === 0) return;
     syncScreenTimeHabit(habits, today).then((synced) => {
-      if (synced) qc.invalidateQueries({ queryKey: ["habitLog", today] });
+      if (synced) qc.invalidateQueries({ queryKey: ["habitLog"] });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [habits.length, today]);
 
-  const toggle = useMutation({
-    // manual=true: every tick on this screen is a person's decision, and the creker sync
-    // must not overrule it later in the day.
-    mutationFn: ({ habitId, done, minimal }: { habitId: string; done: boolean; minimal?: boolean }) =>
-      api.toggleHabit(habitId, today, done, minimal ?? false, true),
-    // Optimistic update so the checkbox feels instant instead of waiting
-    // on a round trip — same snappy feel as the original local-storage demo.
-    onMutate: async ({ habitId, done, minimal }) => {
+  /**
+   * One tap: one step up, stopping at the target. It never steps back — that was the whole
+   * complaint about the old checkbox, where the same tap that marked a habit done also
+   * un-did it. Correcting a mis-tap lives in edit mode instead.
+   */
+  const bump = useMutation({
+    mutationFn: ({ habit, minimal }: { habit: Habit; minimal?: boolean }) =>
+      api.bumpHabit(habit.id, today, perDayTarget(habit), minimal ?? false),
+    // Optimistic, so the number moves under the finger instead of after a round trip.
+    onMutate: async ({ habit, minimal }) => {
       await qc.cancelQueries({ queryKey: ["habitLog", today] });
       const prev = qc.getQueryData<HabitLog[]>(["habitLog", today]) || [];
-      const flag = done && !!minimal;
-      const next = prev.some((l) => l.habitId === habitId)
-        ? prev.map((l) => (l.habitId === habitId ? { ...l, done, minimal: flag } : l))
-        : [...prev, { id: "temp", habitId, date: today, done, minimal: flag }];
-      qc.setQueryData(["habitLog", today], next);
+      const target = perDayTarget(habit);
+      const current = logCount(prev.find((l) => l.habitId === habit.id));
+      const next = Math.min(target, current + 1);
+      const done = next >= target;
+      const rows = prev.some((l) => l.habitId === habit.id)
+        ? prev.map((l) => (l.habitId === habit.id ? { ...l, count: next, done, minimal: done && !!minimal } : l))
+        : [...prev, { id: "temp", habitId: habit.id, date: today, count: next, done, minimal: done && !!minimal }];
+      qc.setQueryData(["habitLog", today], rows);
       return { prev };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(["habitLog", today], ctx.prev);
     },
-    // Invalidate the whole habitLog prefix, not just today's key: the report
-    // screen keeps its own week/streak queries, and ticking a habit here left
-    // them showing yesterday's numbers until their cache happened to expire.
+    // The whole habitLog prefix: the report keeps its own week and streak queries, and
+    // ticking here used to leave them showing yesterday's numbers.
+    onSettled: () => qc.invalidateQueries({ queryKey: ["habitLog"] }),
+  });
+
+  const resetDay = useMutation({
+    mutationFn: (habitId: string) => api.resetHabitDay(habitId, today),
     onSettled: () => qc.invalidateQueries({ queryKey: ["habitLog"] }),
   });
 
@@ -76,26 +117,26 @@ export default function TodayScreen() {
   });
 
   const updateHabit = useMutation({
-    mutationFn: ({ id, label, minimal }: { id: string; label: string; minimal: string | null }) =>
-      api.updateHabit(id, { label, minimal }),
+    mutationFn: (data: { id: string; label: string; minimal: string | null; group: ItemGroup; target: HabitTarget }) =>
+      api.updateHabit(data.id, { label: data.label, minimal: data.minimal, group: data.group, target: data.target }),
     onSuccess: () => {
       setEditingId(null);
       invalidateHabits();
+      // The day's verdict depends on which pile a habit is in and what it is owed.
+      qc.invalidateQueries({ queryKey: ["habitLog"] });
     },
   });
 
   const removeHabit = useMutation({
     mutationFn: (id: string) => api.removeHabit(id),
-    // Removing a habit now also drops its history, so today's count stops
-    // including habits that no longer exist — invalidate both queries.
     onSuccess: () => {
       invalidateHabits();
       qc.invalidateQueries({ queryKey: ["habitLog"] });
     },
   });
 
-  // A single mis-tap on the trash icon used to delete a habit and its whole
-  // history instantly, with no undo.
+  // A single mis-tap on the trash icon used to delete a habit and its whole history
+  // instantly, with no undo.
   const confirmRemove = (h: Habit) =>
     confirmDestructive("Удалить привычку?", `«${h.label}» и её отметки за все дни будут удалены.`, () =>
       removeHabit.mutate(h.id),
@@ -105,6 +146,8 @@ export default function TodayScreen() {
     setEditingId(h.id);
     setEditDraft(h.label);
     setEditMinimal(h.minimal ?? "");
+    setEditGroup(habitGroup(h));
+    setEditTarget(habitTarget(h));
   };
 
   const saveEdit = () => {
@@ -114,6 +157,8 @@ export default function TodayScreen() {
         label: editDraft.trim(),
         // Empty means "no minimal version", not an empty string to render.
         minimal: editMinimal.trim() || null,
+        group: editGroup,
+        target: editTarget,
       });
     } else setEditingId(null);
   };
@@ -123,25 +168,20 @@ export default function TodayScreen() {
     else setAdding(false);
   };
 
-  // Count only habits that still exist: a stale log for a deleted habit used
-  // to keep inflating this ("1 из 9" right after deleting the one ticked
-  // habit). removeHabit purges logs now, but this also covers logs left over
-  // from before the fix.
-  const habitIds = new Set(habits.map((h) => h.id));
-  const doneCount = logs.filter((l) => l.done && habitIds.has(l.habitId)).length;
+  const deciding = habitsThatDecideTheDay(habits);
+  const closed = deciding.filter((h) => logCount(logs.find((l) => l.habitId === h.id)) >= perDayTarget(h)).length;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 }}>
-      {/* The pencil and the bin used to sit in every row, permanently, next to the thing you
-          tap ten times a week. One button puts them behind a deliberate act instead. */}
       <View style={styles.headerRow}>
         <Text style={styles.subtle}>
-          Сегодня выполнено {doneCount} из {habits.length}
+          {deciding.length > 0 ? `Сегодня закрыто ${closed} из ${deciding.length}` : "Ни одной привычки в работе"}
         </Text>
         <Pressable
           onPress={() => {
             setEditing((v) => !v);
             setEditingId(null);
+            setAdding(false);
           }}
           accessibilityRole="button"
           accessibilityLabel={editing ? "Выйти из редактирования" : "Редактировать список"}
@@ -153,145 +193,336 @@ export default function TodayScreen() {
           </Text>
         </Pressable>
       </View>
-      <View style={{ height: 16 }} />
-      {habits.map((h) => {
-        const log = logs.find((l) => l.habitId === h.id);
-        const checked = !!log?.done;
-        const asMinimal = checked && !!log?.minimal;
-        const isEditing = editingId === h.id;
 
-        if (isEditing) {
-          return (
-            <View key={h.id} style={styles.editCard}>
-              <View style={styles.editRow}>
-                <TextInput
-                  value={editDraft}
-                  onChangeText={setEditDraft}
-                  autoFocus
-                  style={styles.editInput}
-                  placeholderTextColor={colors.textMuted}
-                  onSubmitEditing={saveEdit}
-                />
-                <Pressable onPress={saveEdit} style={styles.iconBtn} accessibilityLabel="Сохранить привычку">
-                  <Feather name="check" size={16} color={colors.accentGreen} />
-                </Pressable>
-                <Pressable onPress={() => setEditingId(null)} style={styles.iconBtn} accessibilityLabel="Отменить">
-                  <Feather name="x" size={16} color={colors.textMuted} />
-                </Pressable>
-              </View>
-              {/* Declared here, ahead of time, because on the day you need a
-                  smaller version you will not be in the mood to invent one. */}
-              <TextInput
-                value={editMinimal}
-                onChangeText={setEditMinimal}
-                placeholder="Минимальный вариант на плохой день…"
-                placeholderTextColor={colors.textMuted}
-                style={[styles.editInput, styles.editMinimalInput]}
-                accessibilityLabel="Минимальный вариант"
-                onSubmitEditing={saveEdit}
-              />
-            </View>
-          );
-        }
-
+      {GROUPS.map((group) => {
+        const inGroup = habits.filter((h) => habitGroup(h) === group.id);
+        // An empty pile is only worth a heading while you are sorting things into it.
+        if (inGroup.length === 0 && !editing) return null;
         return (
-          <View key={h.id} style={styles.habitBlock}>
-          <View style={[styles.card, checked && styles.cardChecked]}>
-            <Pressable
-              onPress={() => toggle.mutate({ habitId: h.id, done: !checked })}
-              style={styles.cardMain}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked }}
-              accessibilityLabel={h.label}
-            >
-              {/* A minimal day is marked with a ring rather than a filled dot:
-                  it counts, but it shouldn't look identical to a full one. */}
-              <View
-                style={[
-                  styles.checkbox,
-                  checked && !asMinimal && styles.checkboxChecked,
-                  asMinimal && styles.checkboxMinimal,
-                ]}
-              />
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                  <Text style={[styles.label, { flexShrink: 1 }]}>{h.label}</Text>
-                  {h.auto === "screentime" && (
-                    <View style={styles.autoTag}>
-                      <Feather name="smartphone" size={9} color={colors.textMuted} />
-                      <Text style={styles.autoTagText}>Creker</Text>
-                    </View>
-                  )}
-                </View>
-                {!!h.hint && <Text style={styles.hint}>{h.hint}</Text>}
-              </View>
-            </Pressable>
-
-            {editing && (
-              <>
-                <Pressable onPress={() => startEdit(h)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${h.label}`}>
-                  <Feather name="edit-2" size={14} color={colors.textMuted} />
-                </Pressable>
-                <Pressable onPress={() => confirmRemove(h)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${h.label}`}>
-                  <Feather name="trash-2" size={14} color={colors.textMuted} />
-                </Pressable>
-              </>
+          <View key={group.id} style={styles.group}>
+            <Text style={styles.groupTitle}>{group.title}</Text>
+            <Text style={styles.groupBlurb}>{group.blurb}</Text>
+            {inGroup.length === 0 && <Text style={styles.groupEmpty}>пусто</Text>}
+            {inGroup.map((h) =>
+              editingId === h.id ? (
+                <HabitEditor
+                  key={h.id}
+                  label={editDraft}
+                  onLabel={setEditDraft}
+                  minimal={editMinimal}
+                  onMinimal={setEditMinimal}
+                  group={editGroup}
+                  onGroup={setEditGroup}
+                  target={editTarget}
+                  onTarget={setEditTarget}
+                  onSave={saveEdit}
+                  onCancel={() => setEditingId(null)}
+                />
+              ) : (
+                <HabitRow
+                  key={h.id}
+                  habit={h}
+                  group={group.id}
+                  editing={editing}
+                  count={logCount(logs.find((l) => l.habitId === h.id))}
+                  minimalDone={!!logs.find((l) => l.habitId === h.id)?.minimal}
+                  week={weeklyProgress(h, weekLogs, weekDates)}
+                  onBump={(minimal) => bump.mutate({ habit: h, minimal })}
+                  onEdit={() => startEdit(h)}
+                  onRemove={() => confirmRemove(h)}
+                  onReset={() => resetDay.mutate(h.id)}
+                />
+              ),
             )}
-          </View>
-
-          {/* Only where a minimal version was declared. Ticking it keeps the
-              chain alive on a day the full version isn't happening — the
-              whole point of step 4 of the protocol. */}
-          {!!h.minimal && !(checked && !asMinimal) && (
-            <Pressable
-              onPress={() => toggle.mutate({ habitId: h.id, done: !asMinimal, minimal: true })}
-              accessibilityRole="button"
-              accessibilityState={{ selected: asMinimal }}
-              accessibilityLabel={
-                asMinimal ? `Снять отметку по минимуму: ${h.label}` : `Отметить по минимуму: ${h.minimal}`
-              }
-              style={({ pressed }) => [styles.minimalPill, asMinimal && styles.minimalPillOn, pressed && styles.dimmed]}
-            >
-              <Feather
-                name={asMinimal ? "check" : "corner-down-right"}
-                size={11}
-                color={asMinimal ? colors.accentGreen : colors.textMuted}
-              />
-              <Text style={[styles.minimalText, asMinimal && styles.minimalTextOn]}>
-                {asMinimal ? `По минимуму: ${h.minimal}` : `Минимум: ${h.minimal}`}
-              </Text>
-            </Pressable>
-          )}
           </View>
         );
       })}
 
-      {adding ? (
-        <View style={[styles.card, styles.cardEditing]}>
-          <TextInput
-            value={newLabel}
-            onChangeText={setNewLabel}
-            autoFocus
-            placeholder="Новая привычка…"
-            placeholderTextColor={colors.textMuted}
-            style={styles.editInput}
-            onSubmitEditing={submitNew}
-          />
-          <Pressable onPress={submitNew} style={styles.iconBtn}>
-            <Feather name="check" size={16} color={colors.accentGreen} />
+      {/* Adding is an edit, so it lives with the other edits rather than sitting under the
+          list every day of the year. */}
+      {editing &&
+        (adding ? (
+          <View style={[styles.card, styles.cardEditing]}>
+            <TextInput
+              value={newLabel}
+              onChangeText={setNewLabel}
+              autoFocus
+              placeholder="Новая привычка…"
+              placeholderTextColor={colors.textMuted}
+              style={styles.editInput}
+              onSubmitEditing={submitNew}
+            />
+            <Pressable onPress={submitNew} style={styles.iconBtn} accessibilityLabel="Сохранить привычку">
+              <Feather name="check" size={16} color={colors.accentGreen} />
+            </Pressable>
+            <Pressable onPress={() => setAdding(false)} style={styles.iconBtn} accessibilityLabel="Отменить">
+              <Feather name="x" size={16} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => setAdding(true)}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.addRow, pressed && styles.dimmed]}
+          >
+            <Feather name="plus" size={16} color={colors.textMuted} />
+            <Text style={styles.addRowText}>Добавить привычку</Text>
           </Pressable>
-          <Pressable onPress={() => setAdding(false)} style={styles.iconBtn}>
-            <Feather name="x" size={16} color={colors.textMuted} />
-          </Pressable>
-        </View>
-      ) : (
-        <Pressable onPress={() => setAdding(true)} style={styles.addRow}>
-          <Feather name="plus" size={16} color={colors.textMuted} />
-          <Text style={styles.addRowText}>Добавить привычку</Text>
-        </Pressable>
-      )}
+        ))}
     </ScrollView>
   );
+}
+
+/** One habit as it looks on an ordinary day. */
+function HabitRow({
+  habit,
+  group,
+  editing,
+  count,
+  minimalDone,
+  week,
+  onBump,
+  onEdit,
+  onRemove,
+  onReset,
+}: {
+  habit: Habit;
+  group: ItemGroup;
+  editing: boolean;
+  count: number;
+  /** The day was closed with the small version — shown as a ring rather than a filled dot. */
+  minimalDone: boolean;
+  week: { count: number; target: number };
+  onBump: (minimal?: boolean) => void;
+  onEdit: () => void;
+  onRemove: () => void;
+  onReset: () => void;
+}) {
+  const target = habitTarget(habit);
+  const perDay = perDayTarget(habit);
+  const done = count >= perDay;
+  // "Потом" is a plan: there is nothing to tick, and offering a checkbox would invite
+  // ticking things you have not started.
+  const tickable = group !== "later";
+
+  return (
+    <View style={styles.habitBlock}>
+      <View style={[styles.card, styles.cardInBlock, done && styles.cardChecked, !tickable && styles.cardLater]}>
+        <Pressable
+          onPress={() => tickable && !done && onBump()}
+          disabled={!tickable || done}
+          accessibilityRole={perDay > 1 ? "button" : "checkbox"}
+          accessibilityState={{ checked: done, disabled: !tickable || done }}
+          accessibilityLabel={
+            perDay > 1 ? `${habit.label}: ${count} из ${perDay}` : habit.label
+          }
+          style={styles.cardMain}
+        >
+          {perDay > 1 ? (
+            <View style={[styles.counter, done && styles.counterDone]}>
+              <Text style={[styles.counterText, done && styles.counterTextDone]}>{count}</Text>
+            </View>
+          ) : (
+            <View style={[styles.checkbox, done && styles.checkboxChecked, minimalDone && styles.checkboxMinimal]} />
+          )}
+          <View style={{ flex: 1 }}>
+            <View style={styles.labelRow}>
+              <Text style={[styles.label, { flexShrink: 1 }, !tickable && styles.labelLater]}>{habit.label}</Text>
+              {habit.auto === "screentime" && (
+                <View style={styles.autoTag}>
+                  <Feather name="smartphone" size={9} color={colors.textMuted} />
+                  <Text style={styles.autoTagText}>Creker</Text>
+                </View>
+              )}
+            </View>
+            {!!habit.hint && <Text style={styles.hint}>{habit.hint}</Text>}
+            {/* What is owed, and how much of it is behind you. */}
+            {tickable && perDay > 1 && (
+              <Text style={styles.progress}>
+                {done ? `Готово: ${perDay} из ${perDay}` : `Сделано ${count} из ${perDay}`}
+              </Text>
+            )}
+            {tickable && target.kind === "weekly" && (
+              <Text style={styles.progress}>
+                {`За неделю ${week.count} из ${week.target}`}
+              </Text>
+            )}
+            {!tickable && <Text style={styles.progress}>{describeTarget(target)}</Text>}
+          </View>
+        </Pressable>
+
+        {editing && (
+          <>
+            {count > 0 && (
+              <Pressable onPress={onReset} style={styles.iconBtn} accessibilityLabel={`Сбросить за сегодня: ${habit.label}`}>
+                <Feather name="rotate-ccw" size={14} color={colors.textMuted} />
+              </Pressable>
+            )}
+            <Pressable onPress={onEdit} style={styles.iconBtn} accessibilityLabel={`Изменить: ${habit.label}`}>
+              <Feather name="edit-2" size={14} color={colors.textMuted} />
+            </Pressable>
+            <Pressable onPress={onRemove} style={styles.iconBtn} accessibilityLabel={`Удалить: ${habit.label}`}>
+              <Feather name="trash-2" size={14} color={colors.textMuted} />
+            </Pressable>
+          </>
+        )}
+      </View>
+
+      {/* Only where a minimal version was declared, and only while the full one is still
+          open. Ticking it closes the day the small way — step 4 of the protocol. */}
+      {tickable && !!habit.minimal && !done && (
+        <Pressable
+          onPress={() => onBump(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Отметить по минимуму: ${habit.minimal}`}
+          style={({ pressed }) => [styles.minimalPill, pressed && styles.dimmed]}
+        >
+          <Feather name="corner-down-right" size={11} color={colors.textMuted} />
+          <Text style={styles.minimalText}>{`Минимум: ${habit.minimal}`}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/** The row turned into a form: name, the small version, which pile, and how often. */
+function HabitEditor({
+  label,
+  onLabel,
+  minimal,
+  onMinimal,
+  group,
+  onGroup,
+  target,
+  onTarget,
+  onSave,
+  onCancel,
+}: {
+  label: string;
+  onLabel: (v: string) => void;
+  minimal: string;
+  onMinimal: (v: string) => void;
+  group: ItemGroup;
+  onGroup: (v: ItemGroup) => void;
+  target: HabitTarget;
+  onTarget: (v: HabitTarget) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const bumpCount = (delta: number) =>
+    onTarget({ ...target, count: Math.min(MAX_TARGET_COUNT, Math.max(1, target.count + delta)) });
+
+  return (
+    <View style={styles.editCard}>
+      <View style={styles.editRow}>
+        <TextInput
+          value={label}
+          onChangeText={onLabel}
+          autoFocus
+          style={styles.editInput}
+          placeholderTextColor={colors.textMuted}
+          onSubmitEditing={onSave}
+        />
+        <Pressable onPress={onSave} style={styles.iconBtn} accessibilityLabel="Сохранить привычку">
+          <Feather name="check" size={16} color={colors.accentGreen} />
+        </Pressable>
+        <Pressable onPress={onCancel} style={styles.iconBtn} accessibilityLabel="Отменить">
+          <Feather name="x" size={16} color={colors.textMuted} />
+        </Pressable>
+      </View>
+
+      {/* Declared ahead of time, because on the day you need a smaller version you will not
+          be in the mood to invent one. */}
+      <TextInput
+        value={minimal}
+        onChangeText={onMinimal}
+        placeholder="Минимальный вариант на плохой день…"
+        placeholderTextColor={colors.textMuted}
+        style={[styles.editInput, styles.editMinimalInput]}
+        accessibilityLabel="Минимальный вариант"
+        onSubmitEditing={onSave}
+      />
+
+      <Text style={styles.editLabel}>Куда</Text>
+      <View style={styles.chipRow}>
+        {GROUPS.map((g) => (
+          <Pressable
+            key={g.id}
+            onPress={() => onGroup(g.id)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: group === g.id }}
+            style={({ pressed }) => [styles.chip, group === g.id && styles.chipOn, pressed && styles.dimmed]}
+          >
+            <Text style={[styles.chipText, group === g.id && styles.chipTextOn]}>{g.title}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <Text style={styles.editLabel}>Сколько раз</Text>
+      <View style={styles.chipRow}>
+        {([
+          ["daily", "в день"],
+          ["weekly", "в неделю"],
+        ] as const).map(([kind, title]) => (
+          <Pressable
+            key={kind}
+            onPress={() => onTarget({ ...target, kind })}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: target.kind === kind }}
+            style={({ pressed }) => [styles.chip, target.kind === kind && styles.chipOn, pressed && styles.dimmed]}
+          >
+            <Text style={[styles.chipText, target.kind === kind && styles.chipTextOn]}>{title}</Text>
+          </Pressable>
+        ))}
+        <View style={styles.stepper}>
+          <Pressable
+            onPress={() => bumpCount(-1)}
+            accessibilityRole="button"
+            accessibilityLabel="Меньше повторов"
+            style={({ pressed }) => [styles.stepBtn, pressed && styles.dimmed]}
+          >
+            <Text style={styles.stepBtnText}>−</Text>
+          </Pressable>
+          <Text style={styles.stepValue}>{target.count}</Text>
+          <Pressable
+            onPress={() => bumpCount(1)}
+            accessibilityRole="button"
+            accessibilityLabel="Больше повторов"
+            style={({ pressed }) => [styles.stepBtn, pressed && styles.dimmed]}
+          >
+            <Text style={styles.stepBtnText}>+</Text>
+          </Pressable>
+        </View>
+      </View>
+      <Text style={styles.editNote}>
+        {target.kind === "daily"
+          ? `День закрыт, когда отмечено ${target.count} ${plural(target.count, ["раз", "раза", "раз"])}.`
+          : `${target.count} ${plural(target.count, ["день", "дня", "дней"])} в неделю. Недельные привычки не рушат зачёт дня.`}
+      </Text>
+    </View>
+  );
+}
+
+function describeTarget(target: HabitTarget): string {
+  return target.kind === "daily"
+    ? `${target.count} ${plural(target.count, ["раз", "раза", "раз"])} в день`
+    : `${target.count} ${plural(target.count, ["раз", "раза", "раз"])} в неделю`;
+}
+
+/** Every date from `from` to `to`, inclusive — the days a weekly habit is counted across. */
+function datesBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const cursor = new Date(fy, fm - 1, fd);
+  for (let i = 0; i < 8; i++) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(
+      cursor.getDate(),
+    ).padStart(2, "0")}`;
+    if (key > to) break;
+    out.push(key);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
 }
 
 const styles = StyleSheet.create({
@@ -313,7 +544,12 @@ const styles = StyleSheet.create({
   editToggleTextOn: { color: colors.bg, fontWeight: "600" },
   pressed: { opacity: 0.75 },
 
-  subtle: { color: colors.textMuted, fontSize: 13 },
+  subtle: { color: colors.textMuted, fontSize: 13, flexShrink: 1 },
+  group: { marginTop: 22 },
+  groupTitle: { color: colors.text, fontSize: 13, fontWeight: "600" },
+  groupBlurb: { color: colors.textMuted, fontSize: 11, marginTop: 2, marginBottom: 10 },
+  groupEmpty: { color: colors.textMuted, fontSize: 12, fontStyle: "italic", marginBottom: 10 },
+
   habitBlock: { marginBottom: 10 },
   editCard: {
     backgroundColor: colors.card,
@@ -327,7 +563,32 @@ const styles = StyleSheet.create({
   },
   editRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   editMinimalInput: { fontSize: 12, color: colors.textMuted },
-  checkboxMinimal: { borderColor: colors.accentGreen, borderWidth: 2, backgroundColor: "transparent" },
+  editLabel: { color: colors.textMuted, fontSize: 11, marginTop: 4 },
+  editNote: { color: colors.textMuted, fontSize: 11, lineHeight: 16 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.bg,
+  },
+  chipOn: { backgroundColor: "rgba(143,184,154,0.12)", borderColor: colors.accentGreen },
+  chipText: { color: colors.textMuted, fontSize: 12 },
+  chipTextOn: { color: colors.accentGreen, fontWeight: "600" },
+  stepper: { flexDirection: "row", alignItems: "center", gap: 8, marginLeft: "auto" },
+  stepBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.bg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepBtnText: { color: colors.text, fontSize: 16, lineHeight: 18 },
+  stepValue: { color: colors.text, fontSize: 14, fontWeight: "600", minWidth: 18, textAlign: "center" },
+
   minimalPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -340,9 +601,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: colors.card,
   },
-  minimalPillOn: { backgroundColor: "rgba(143,184,154,0.12)" },
   minimalText: { color: colors.textMuted, fontSize: 11, flexShrink: 1 },
-  minimalTextOn: { color: colors.accentGreen },
   dimmed: { opacity: 0.7 },
   card: {
     flexDirection: "row",
@@ -359,6 +618,7 @@ const styles = StyleSheet.create({
   cardMain: { flexDirection: "row", gap: 12, alignItems: "flex-start", flex: 1 },
   cardInBlock: { marginBottom: 0 },
   cardChecked: { backgroundColor: "rgba(143,184,154,0.12)", borderColor: colors.accentGreenDark },
+  cardLater: { opacity: 0.6 },
   cardEditing: { borderColor: colors.accent },
   checkbox: {
     width: 20,
@@ -369,8 +629,25 @@ const styles = StyleSheet.create({
     borderColor: "#4a5058",
   },
   checkboxChecked: { backgroundColor: colors.accentGreen, borderWidth: 0 },
+  checkboxMinimal: { borderColor: colors.accentGreen, borderWidth: 2, backgroundColor: "transparent" },
+  counter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    marginTop: 1,
+    borderWidth: 1.5,
+    borderColor: "#4a5058",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  counterDone: { backgroundColor: colors.accentGreen, borderColor: colors.accentGreen },
+  counterText: { color: colors.textMuted, fontSize: 11, fontWeight: "700" },
+  counterTextDone: { color: colors.bg },
+  labelRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
   label: { color: colors.text, fontSize: 15, fontWeight: "500" },
+  labelLater: { color: colors.textMuted },
   hint: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  progress: { color: colors.textMuted, fontSize: 11, marginTop: 3 },
   autoTag: {
     flexDirection: "row",
     alignItems: "center",
@@ -387,6 +664,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    marginTop: 16,
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 16,

@@ -1,3 +1,18 @@
+/**
+ * Which pile a habit or a trigger sits in.
+ *
+ * The point of the split is that a list of ten things you eventually want is not a list of
+ * ten things you are doing. Only "now" decides whether a day counts; "extra" can be ticked
+ * for the record but never blocks a day; "later" is a plan, not a task.
+ */
+export type ItemGroup = "now" | "extra" | "later";
+
+/** How often a habit is owed: N times a day, or N times across the week. */
+export interface HabitTarget {
+  kind: "daily" | "weekly";
+  count: number;
+}
+
 export interface Habit {
   id: string;
   label: string;
@@ -9,6 +24,16 @@ export interface Habit {
    */
   minimal?: string | null;
   sortOrder: number;
+  /** Defaults to "now" — every habit that existed before the split was one you were doing. */
+  group?: ItemGroup;
+  /**
+   * Defaults to once a day, which is what every habit meant before targets existed.
+   *
+   * A weekly target never blocks a day: "спорт 3 раза в неделю" would otherwise fail every
+   * day you don't train, which is most of them. It is counted and shown across the week
+   * instead, and the day's verdict looks only at daily habits.
+   */
+  target?: HabitTarget;
   /** When set, this habit's done-state for today is managed automatically
    *  instead of by tapping — currently only "screentime" (from creker), see
    *  src/integrations/screenTime.ts. */
@@ -19,7 +44,17 @@ export interface HabitLog {
   id: string;
   habitId: string;
   date: string; // ISO date
+  /**
+   * Kept as the plain "did it happen at all" flag every other part of the app already reads
+   * — the calendar, the streak, the report. With targets it means `count` reached the
+   * habit's daily target.
+   */
   done: boolean;
+  /**
+   * How many times it was done that day. Absent on rows written before targets existed, so
+   * readers fall back to `done ? 1 : 0` rather than treating an old day as zero.
+   */
+  count?: number;
   /**
    * True when the day was closed with the minimal version rather than the
    * full one. Still counts for the streak — the source's whole point is that
@@ -40,6 +75,8 @@ export interface Trigger {
   id: string;
   label: string;
   removed: boolean;
+  /** Same three piles as habits; triggers never affect the day either way. */
+  group?: ItemGroup;
 }
 
 export interface EnergyLog {

@@ -1,5 +1,7 @@
 import { toDateKey } from "./date";
 import { weekStart } from "./week";
+import { habitsThatDecideTheDay } from "./habits";
+import { dayCounts } from "./streak";
 import type { Habit, HabitLog } from "../types";
 
 export type DayState = "full" | "minimal" | "frozen" | "missed" | "future";
@@ -51,23 +53,17 @@ export function monthRange(key: string): { from: string; to: string } {
  * counted — not merely that one of its ticks happened to be a small one.
  */
 export function computeDayStates(habits: Habit[], logs: HabitLog[]): Map<string, "full" | "minimal"> {
-  const target = Math.ceil(habits.length / 2);
-  const habitIds = new Set(habits.map((h) => h.id));
-  const totals = new Map<string, { done: number; full: number }>();
-
-  for (const l of logs) {
-    if (!l.done || !habitIds.has(l.habitId)) continue;
-    const acc = totals.get(l.date) ?? { done: 0, full: 0 };
-    acc.done += 1;
-    if (!l.minimal) acc.full += 1;
-    totals.set(l.date, acc);
-  }
-
   const states = new Map<string, "full" | "minimal">();
-  if (target === 0) return states;
-  for (const [date, { done, full }] of totals) {
-    if (done < target) continue;
-    states.set(date, full >= target ? "full" : "minimal");
+  const deciding = habitsThatDecideTheDay(habits);
+  if (deciding.length === 0) return states;
+
+  // Same verdict the streak uses — the calendar filling a day the streak refused to count
+  // is the kind of disagreement nobody can debug from the outside.
+  const decidingIds = new Set(deciding.map((h) => h.id));
+  for (const date of new Set(logs.map((l) => l.date))) {
+    if (!dayCounts(habits, logs, date)) continue;
+    const minimal = logs.some((l) => l.date === date && l.done && l.minimal && decidingIds.has(l.habitId));
+    states.set(date, minimal ? "minimal" : "full");
   }
   return states;
 }

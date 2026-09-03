@@ -5,7 +5,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { colors } from "../theme/colors";
 import { confirmDestructive } from "../lib/confirm";
-import type { Trigger } from "../types";
+import { itemGroup } from "../lib/habits";
+import type { ItemGroup, Trigger } from "../types";
+
+/** The same three piles as the habits — see ItemGroup. Triggers never affect the day. */
+const GROUPS: { id: ItemGroup; title: string; blurb: string }[] = [
+  { id: "now", title: "Убираю сейчас", blurb: "то, над чем работаешь прямо сейчас" },
+  { id: "extra", title: "Дополнительно", blurb: "убрал попутно, специально не занимаешься" },
+  { id: "later", title: "Потом", blurb: "знаешь, что мешает, но очередь ещё не дошла" },
+];
 
 export default function TriggersScreen() {
   const qc = useQueryClient();
@@ -43,6 +51,11 @@ export default function TriggersScreen() {
       setEditingId(null);
       invalidate();
     },
+  });
+
+  const setGroup = useMutation({
+    mutationFn: ({ id, group }: { id: string; group: ItemGroup }) => api.setTriggerGroup(id, group),
+    onSettled: invalidate,
   });
 
   const removeTrigger = useMutation({
@@ -86,6 +99,7 @@ export default function TriggersScreen() {
           onPress={() => {
             setEditing((v) => !v);
             setEditingId(null);
+            setAdding(false);
           }}
           accessibilityRole="button"
           accessibilityLabel={editing ? "Выйти из редактирования" : "Редактировать список"}
@@ -100,81 +114,114 @@ export default function TriggersScreen() {
       <Text style={[styles.subtle, { marginTop: 4, marginBottom: 20 }]}>
         сокращай постепенно, по одному — не всё сразу
       </Text>
-      {triggers.map((t) => {
-        const isEditing = editingId === t.id;
-
-        if (isEditing) {
-          return (
-            <View key={t.id} style={[styles.card, styles.cardEditing]}>
-              <TextInput
-                value={editDraft}
-                onChangeText={setEditDraft}
-                autoFocus
-                style={styles.editInput}
-                placeholderTextColor={colors.textMuted}
-                onSubmitEditing={saveEdit}
-              />
-              <Pressable onPress={saveEdit} style={styles.iconBtn}>
-                <Feather name="check" size={16} color={colors.accentGreen} />
-              </Pressable>
-              <Pressable onPress={() => setEditingId(null)} style={styles.iconBtn}>
-                <Feather name="x" size={16} color={colors.textMuted} />
-              </Pressable>
-            </View>
-          );
-        }
-
+      {GROUPS.map((group) => {
+        const inGroup = triggers.filter((t) => itemGroup(t) === group.id);
+        // An empty pile is only worth a heading while you are sorting things into it.
+        if (inGroup.length === 0 && !editing) return null;
         return (
-          <View key={t.id} style={[styles.card, t.removed && styles.cardRemoved]}>
-            <Pressable
-              onPress={() => toggle.mutate({ id: t.id, removed: !t.removed })}
-              style={styles.cardMain}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: t.removed }}
-              accessibilityLabel={t.label}
-            >
-              <View style={[styles.dot, t.removed && styles.dotRemoved]} />
-              <Text style={styles.label}>{t.label}</Text>
-              <Text style={styles.status}>{t.removed ? "убрал" : "ещё нет"}</Text>
-            </Pressable>
-            {editing && (
-              <>
-                <Pressable onPress={() => startEdit(t)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${t.label}`}>
-                  <Feather name="edit-2" size={14} color={colors.textMuted} />
-                </Pressable>
-                <Pressable onPress={() => confirmRemove(t)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${t.label}`}>
-                  <Feather name="trash-2" size={14} color={colors.textMuted} />
-                </Pressable>
-              </>
-            )}
+          <View key={group.id} style={styles.group}>
+            <Text style={styles.groupTitle}>{group.title}</Text>
+            <Text style={styles.groupBlurb}>{group.blurb}</Text>
+            {inGroup.length === 0 && <Text style={styles.groupEmpty}>пусто</Text>}
+            {inGroup.map((t) => {
+              if (editingId === t.id) {
+                return (
+                  <View key={t.id} style={[styles.card, styles.cardEditing, styles.editStack]}>
+                    <View style={styles.editRow}>
+                      <TextInput
+                        value={editDraft}
+                        onChangeText={setEditDraft}
+                        autoFocus
+                        style={styles.editInput}
+                        placeholderTextColor={colors.textMuted}
+                        onSubmitEditing={saveEdit}
+                      />
+                      <Pressable onPress={saveEdit} style={styles.iconBtn} accessibilityLabel="Сохранить">
+                        <Feather name="check" size={16} color={colors.accentGreen} />
+                      </Pressable>
+                      <Pressable onPress={() => setEditingId(null)} style={styles.iconBtn} accessibilityLabel="Отменить">
+                        <Feather name="x" size={16} color={colors.textMuted} />
+                      </Pressable>
+                    </View>
+                    <View style={styles.chipRow}>
+                      {GROUPS.map((g) => (
+                        <Pressable
+                          key={g.id}
+                          onPress={() => setGroup.mutate({ id: t.id, group: g.id })}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: itemGroup(t) === g.id }}
+                          style={({ pressed }) => [
+                            styles.chip,
+                            itemGroup(t) === g.id && styles.chipOn,
+                            pressed && styles.dimmed,
+                          ]}
+                        >
+                          <Text style={[styles.chipText, itemGroup(t) === g.id && styles.chipTextOn]}>{g.title}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                );
+              }
+
+              return (
+                <View key={t.id} style={[styles.card, t.removed && styles.cardRemoved]}>
+                  <Pressable
+                    onPress={() => toggle.mutate({ id: t.id, removed: !t.removed })}
+                    style={styles.cardMain}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: t.removed }}
+                    accessibilityLabel={t.label}
+                  >
+                    <View style={[styles.dot, t.removed && styles.dotRemoved]} />
+                    <Text style={styles.label}>{t.label}</Text>
+                    <Text style={styles.status}>{t.removed ? "убрал" : "ещё нет"}</Text>
+                  </Pressable>
+                  {editing && (
+                    <>
+                      <Pressable onPress={() => startEdit(t)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${t.label}`}>
+                        <Feather name="edit-2" size={14} color={colors.textMuted} />
+                      </Pressable>
+                      <Pressable onPress={() => confirmRemove(t)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${t.label}`}>
+                        <Feather name="trash-2" size={14} color={colors.textMuted} />
+                      </Pressable>
+                    </>
+                  )}
+                </View>
+              );
+            })}
           </View>
         );
       })}
 
-      {adding ? (
-        <View style={[styles.card, styles.cardEditing]}>
-          <TextInput
-            value={newLabel}
-            onChangeText={setNewLabel}
-            autoFocus
-            placeholder="Новый триггер…"
-            placeholderTextColor={colors.textMuted}
-            style={styles.editInput}
-            onSubmitEditing={submitNew}
-          />
-          <Pressable onPress={submitNew} style={styles.iconBtn}>
-            <Feather name="check" size={16} color={colors.accentGreen} />
+      {/* Adding is an edit, so it lives with the other edits rather than sitting under the
+          list every day of the year. */}
+      {editing &&
+        (adding ? (
+          <View style={[styles.card, styles.cardEditing]}>
+            <TextInput
+              value={newLabel}
+              onChangeText={setNewLabel}
+              autoFocus
+              placeholder="Новый триггер…"
+              placeholderTextColor={colors.textMuted}
+              style={styles.editInput}
+              onSubmitEditing={submitNew}
+            />
+            <Pressable onPress={submitNew} style={styles.iconBtn} accessibilityLabel="Сохранить триггер">
+              <Feather name="check" size={16} color={colors.accentGreen} />
+            </Pressable>
+            <Pressable onPress={() => setAdding(false)} style={styles.iconBtn} accessibilityLabel="Отменить">
+              <Feather name="x" size={16} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable onPress={() => setAdding(true)} style={styles.addRow} accessibilityRole="button">
+            <Feather name="plus" size={16} color={colors.textMuted} />
+            <Text style={styles.addRowText}>Добавить триггер</Text>
           </Pressable>
-          <Pressable onPress={() => setAdding(false)} style={styles.iconBtn}>
-            <Feather name="x" size={16} color={colors.textMuted} />
-          </Pressable>
-        </View>
-      ) : (
-        <Pressable onPress={() => setAdding(true)} style={styles.addRow}>
-          <Feather name="plus" size={16} color={colors.textMuted} />
-          <Text style={styles.addRowText}>Добавить триггер</Text>
-        </Pressable>
-      )}
+        ))}
+
     </ScrollView>
   );
 }
@@ -197,6 +244,25 @@ const styles = StyleSheet.create({
   editToggleText: { color: colors.textMuted, fontSize: 12 },
   editToggleTextOn: { color: colors.bg, fontWeight: "600" },
   pressed: { opacity: 0.75 },
+  group: { marginTop: 22 },
+  groupTitle: { color: colors.text, fontSize: 13, fontWeight: "600" },
+  groupBlurb: { color: colors.textMuted, fontSize: 11, marginTop: 2, marginBottom: 10 },
+  groupEmpty: { color: colors.textMuted, fontSize: 12, fontStyle: "italic", marginBottom: 10 },
+  editStack: { flexDirection: "column", alignItems: "stretch", gap: 10 },
+  editRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.bg,
+  },
+  chipOn: { backgroundColor: "rgba(143,184,154,0.12)", borderColor: colors.accentGreen },
+  chipText: { color: colors.textMuted, fontSize: 12 },
+  chipTextOn: { color: colors.accentGreen, fontWeight: "600" },
+  dimmed: { opacity: 0.7 },
 
   subtle: { color: colors.textMuted, fontSize: 13 },
   card: {

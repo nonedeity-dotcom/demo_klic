@@ -1,4 +1,5 @@
 import { dateNDaysAgo } from "./date";
+import { habitsThatDecideTheDay, logCount, perDayTarget } from "./habits";
 import { weekKey } from "./week";
 import type { Habit, HabitLog } from "../types";
 
@@ -6,38 +7,45 @@ import type { Habit, HabitLog } from "../types";
 export const STREAK_WINDOW_DAYS = 120;
 
 /**
- * Days in a row where at least half the habits were done.
+ * Whether a single day met the bar: every habit you are currently introducing reached its
+ * target for that day.
  *
- * Lives here rather than inside the report because two screens now show it (the report's
- * ring and bar, and the Этапы screen), and a second hand-rolled copy would drift: the
- * "deleted habits don't count" and "an empty checklist has no streak" rules below are both
- * bugs that were fixed once already.
+ * It used to be "half of all habits", which is why a list of ten things you eventually want
+ * made the bar ten tall and then let you clear it with five. The bar is now exactly as tall
+ * as the pile you said you are working on — which is what makes keeping that pile small the
+ * point rather than a suggestion.
+ *
+ * "Дополнительно" and "потом" cannot fail a day, and neither can a weekly habit: it would
+ * fail every day that isn't a training day. No daily habit in the "now" pile means there is
+ * no verdict to give and the day does not count — the same rule as an empty checklist,
+ * which once reported a 120-day streak for nothing at all.
  */
-/** Whether a single day met the bar: at least half the habits done. */
 export function dayCounts(habits: Habit[], logs: HabitLog[], date: string): boolean {
-  const dayTarget = Math.ceil(habits.length / 2);
-  if (dayTarget <= 0) return false;
-  const habitIds = new Set(habits.map((h) => h.id));
-  return logs.filter((l) => l.date === date && l.done && habitIds.has(l.habitId)).length >= dayTarget;
+  const deciding = habitsThatDecideTheDay(habits);
+  if (deciding.length === 0) return false;
+  return deciding.every((h) => {
+    const log = logs.find((l) => l.habitId === h.id && l.date === date);
+    return logCount(log) >= perDayTarget(h);
+  });
 }
 
+/**
+ * Days in a row that counted.
+ *
+ * Lives here rather than inside the report because three screens read it now, and a second
+ * hand-rolled copy would drift: "deleted habits don't count" and "an empty checklist has no
+ * streak" are both bugs that were fixed once already.
+ */
 export function computeStreak(habits: Habit[], logs: HabitLog[], frozen: string[] = []): number {
-  // With no habits at all there is nothing to be consistent about: `done >= Math.ceil(0/2)`
-  // is `0 >= 0`, always true, which once reported a 120-day streak for an empty checklist.
-  const dayTarget = Math.ceil(habits.length / 2);
-  if (dayTarget <= 0) return 0;
-
-  // Logs of deleted habits must not count towards this.
-  const habitIds = new Set(habits.map((h) => h.id));
-  const counts = (log: HabitLog) => log.done && habitIds.has(log.habitId);
+  // With nothing in the "now" pile there is nothing to be consistent about.
+  if (habitsThatDecideTheDay(habits).length === 0) return 0;
 
   const frozenDays = new Set(frozen);
 
   let streak = 0;
   for (let i = 0; i < STREAK_WINDOW_DAYS; i++) {
     const day = dateNDaysAgo(i);
-    const done = logs.filter((l) => l.date === day && counts(l)).length;
-    if (done >= dayTarget) streak++;
+    if (dayCounts(habits, logs, day)) streak++;
     // Today still being unfinished shouldn't break yesterday's streak.
     else if (i === 0) continue;
     // A frozen day neither breaks the chain nor adds to it. Counting it as a day would be

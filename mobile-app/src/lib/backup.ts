@@ -17,6 +17,8 @@ import {
 import { toDateKey } from "./date";
 import type {
   Habit,
+  HabitTarget,
+  ItemGroup,
   HabitLog,
   Trigger,
   EnergyLog,
@@ -87,6 +89,19 @@ function pickValid<T>(value: unknown, keep: (row: Record<string, unknown>, index
   return out;
 }
 
+function isGroup(v: unknown): v is ItemGroup {
+  return v === "now" || v === "extra" || v === "later";
+}
+
+/** Anything unreadable becomes the old meaning of a habit: once a day. */
+function parseTarget(raw: unknown): HabitTarget {
+  if (typeof raw !== "object" || raw === null) return { kind: "daily", count: 1 };
+  const o = raw as Record<string, unknown>;
+  const kind = o.kind === "weekly" ? "weekly" : "daily";
+  const count = isNum(o.count) ? Math.min(12, Math.max(1, Math.round(o.count))) : 1;
+  return { kind, count };
+}
+
 function parseData(raw: unknown): BackupData {
   const d = isObj(raw) ? raw : {};
 
@@ -98,6 +113,10 @@ function parseData(raw: unknown): BackupData {
           hint: isStr(h.hint) ? h.hint : null,
           minimal: isStr(h.minimal) ? h.minimal : null,
           sortOrder: isNum(h.sortOrder) ? h.sortOrder : index,
+          // Absent in files written before the split and the targets — an old habit was one
+          // you were doing, once a day.
+          group: isGroup(h.group) ? h.group : "now",
+          target: parseTarget(h.target),
           auto: h.auto === "screentime" ? "screentime" : null,
         }
       : null,
@@ -110,13 +129,17 @@ function parseData(raw: unknown): BackupData {
           habitId: l.habitId,
           date: l.date,
           done: l.done === true,
+          // A row from before counters recorded only "done", which was one.
+          count: isNum(l.count) ? Math.max(0, Math.trunc(l.count)) : l.done === true ? 1 : 0,
           minimal: l.done === true && l.minimal === true,
         }
       : null,
   );
 
   const triggers = pickValid<Trigger>(d.triggers, (t) =>
-    isStr(t.id) && isStr(t.label) ? { id: t.id, label: t.label, removed: t.removed === true } : null,
+    isStr(t.id) && isStr(t.label)
+      ? { id: t.id, label: t.label, removed: t.removed === true, group: isGroup(t.group) ? t.group : "now" }
+      : null,
   );
 
   const energy = pickValid<EnergyLog>(d.energy, (e) =>

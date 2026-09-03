@@ -1,5 +1,6 @@
 import { getCrekerScreenTime } from "../../modules/creker-usage";
 import { api } from "../api/client";
+import { perDayTarget } from "../lib/habits";
 import { decideScreenTimeHabit } from "../lib/screenTime";
 import type { Habit, HabitLog } from "../types";
 
@@ -31,6 +32,9 @@ export async function syncScreenTimeHabit(habits: Habit[], date: string): Promis
   const verdict = decideScreenTimeHabit(row, limitMin, Date.now(), date);
   if (verdict.action !== "tick") return false;
 
-  await api.toggleHabit(target.id, date, verdict.withinLimit);
+  // The auto habit is a plain yes/no, so its day is written straight to full or empty
+  // rather than stepped: creker's answer is not a tap.
+  const perDay = perDayTarget(target);
+  await api.setHabitProgress(target.id, date, verdict.withinLimit ? perDay : 0, perDay);
   return true;
 }

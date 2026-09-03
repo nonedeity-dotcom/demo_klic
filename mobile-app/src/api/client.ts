@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type {
+  HabitTarget,
+  ItemGroup,
   Habit,
   HabitLog,
   Trigger,
@@ -169,7 +171,10 @@ export const api = {
       return habit;
     });
   },
-  async updateHabit(id: string, data: { label?: string; hint?: string; minimal?: string | null }): Promise<{ ok: true }> {
+  async updateHabit(
+    id: string,
+    data: { label?: string; hint?: string; minimal?: string | null; group?: ItemGroup; target?: HabitTarget },
+  ): Promise<{ ok: true }> {
     return withKeyLock(KEYS.habits, async () => {
       const habits = await read<Habit[]>(KEYS.habits, []);
       await write(
@@ -213,19 +218,68 @@ export const api = {
    * day is set by hand it stays that way: see syncScreenTimeHabit, which reads the flag
    * back and leaves such a day alone.
    */
-  async toggleHabit(habitId: string, date: string, done: boolean, minimal = false, manual = false): Promise<HabitLog> {
+  /**
+   * Writes a day's progress for one habit. Everything else here goes through it.
+   *
+   * `count` is clamped to 0..target, which is what makes a tap unable to undo anything: the
+   * counter walks up and stops. `done` is derived rather than passed in, so the flag the
+   * calendar and the streak read can never disagree with the number the row shows.
+   */
+  async setHabitProgress(
+    habitId: string,
+    date: string,
+    count: number,
+    target: number,
+    opts: { minimal?: boolean; manual?: boolean } = {},
+  ): Promise<HabitLog> {
     return withKeyLock(KEYS.habitLog, async () => {
       const logs = await read<HabitLog[]>(KEYS.habitLog, []);
       const existing = logs.find((l) => l.habitId === habitId && l.date === date);
+      const capped = Math.min(Math.max(1, target), Math.max(0, Math.trunc(count)));
+      const done = capped >= Math.max(1, target);
       // Never cleared by an automatic write: a sync passing manual=false must not erase the
       // flag a tap set earlier in the day.
-      const manualFlag = manual || existing?.manual === true;
+      const manual = opts.manual || existing?.manual === true;
+      const minimal = done ? (opts.minimal ?? existing?.minimal ?? false) : false;
       const entry: HabitLog = existing
-        ? { ...existing, done, minimal: done ? minimal : false, manual: manualFlag }
-        : { id: uid(), habitId, date, done, minimal: done ? minimal : false, manual: manualFlag };
+        ? { ...existing, count: capped, done, minimal, manual }
+        : { id: uid(), habitId, date, count: capped, done, minimal, manual };
       await write(KEYS.habitLog, existing ? logs.map((l) => (l === existing ? entry : l)) : [...logs, entry]);
       return entry;
     });
+  },
+
+  /**
+   * One tap: one step up, stopping at the target. Reading and writing under the same lock so
+   * two quick taps count as two rather than both reading the same number and writing 1.
+   */
+  async bumpHabit(habitId: string, date: string, target: number, minimal = false): Promise<HabitLog> {
+    return withKeyLock(KEYS.habitLog, async () => {
+      const logs = await read<HabitLog[]>(KEYS.habitLog, []);
+      const existing = logs.find((l) => l.habitId === habitId && l.date === date);
+      const current =
+        typeof existing?.count === "number" ? Math.max(0, Math.trunc(existing.count)) : existing?.done ? 1 : 0;
+      const cap = Math.max(1, target);
+      const capped = Math.min(cap, current + 1);
+      const done = capped >= cap;
+      const entry: HabitLog = existing
+        ? { ...existing, count: capped, done, minimal: done ? minimal || !!existing.minimal : false, manual: true }
+        : { id: uid(), habitId, date, count: capped, done, minimal: done ? minimal : false, manual: true };
+      await write(KEYS.habitLog, existing ? logs.map((l) => (l === existing ? entry : l)) : [...logs, entry]);
+      return entry;
+    });
+  },
+
+  /** Back to zero for the day — the only way to undo a tap, and it lives in edit mode. */
+  async resetHabitDay(habitId: string, date: string): Promise<{ ok: true }> {
+    await withKeyLock(KEYS.habitLog, async () => {
+      const logs = await read<HabitLog[]>(KEYS.habitLog, []);
+      const existing = logs.find((l) => l.habitId === habitId && l.date === date);
+      if (!existing) return;
+      const entry: HabitLog = { ...existing, count: 0, done: false, minimal: false, manual: true };
+      await write(KEYS.habitLog, logs.map((l) => (l === existing ? entry : l)));
+    });
+    return { ok: true as const };
   },
 
   /**
@@ -253,6 +307,13 @@ export const api = {
   async getTriggers(): Promise<Trigger[]> {
     await ensureSeeded();
     return read(KEYS.triggers, []);
+  },
+  async setTriggerGroup(id: string, group: ItemGroup): Promise<{ ok: true }> {
+    return withKeyLock(KEYS.triggers, async () => {
+      const triggers = await read<Trigger[]>(KEYS.triggers, []);
+      await write(KEYS.triggers, triggers.map((t) => (t.id === id ? { ...t, group } : t)));
+      return { ok: true as const };
+    });
   },
   async addTrigger(label: string): Promise<Trigger> {
     return withKeyLock(KEYS.triggers, async () => {
