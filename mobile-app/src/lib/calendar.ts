@@ -1,6 +1,6 @@
 import { toDateKey } from "./date";
 import { weekStart } from "./week";
-import { habitsThatDecideTheDay } from "./habits";
+import { habitsThatDecideTheDay, logCount, perDayTarget } from "./habits";
 import { dayCounts } from "./streak";
 import type { Habit, HabitLog } from "../types";
 
@@ -64,6 +64,22 @@ export function computeDayStates(habits: Habit[], logs: HabitLog[]): Map<string,
     if (!dayCounts(habits, logs, date)) continue;
     const minimal = logs.some((l) => l.date === date && l.done && l.minimal && decidingIds.has(l.habitId));
     states.set(date, minimal ? "minimal" : "full");
+  }
+  return states;
+}
+
+/**
+ * The month for one habit alone: a day is filled when that habit met its own target, not
+ * when the day as a whole counted. Used by the per-habit report, where the question is
+ * "when did I skip *this*" rather than "did the day hold".
+ */
+export function singleHabitDayStates(habit: Habit, logs: HabitLog[]): Map<string, "full" | "minimal"> {
+  const states = new Map<string, "full" | "minimal">();
+  const target = perDayTarget(habit);
+  for (const l of logs) {
+    if (l.habitId !== habit.id) continue;
+    if (logCount(l) < target) continue;
+    states.set(l.date, l.minimal ? "minimal" : "full");
   }
   return states;
 }

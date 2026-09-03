@@ -10,6 +10,7 @@ import {
   buildWeeksGrid,
   compareWithPrevious,
   computeDayStates,
+  singleHabitDayStates,
   countedDays,
   elapsedDays,
   monthKey,
@@ -37,6 +38,8 @@ export default function HistoryCalendar({
   habits,
   accent,
   frozen = [],
+  habit,
+  alwaysOpen = false,
 }: {
   today: string;
   habits: Habit[];
@@ -48,6 +51,17 @@ export default function HistoryCalendar({
   accent?: string;
   /** Days kept by the weekly freeze — drawn as their own state, not as done. */
   frozen?: string[];
+  /**
+   * When set, the grid shows this one habit instead of whether the day as a whole counted —
+   * the per-habit report asks "when did I skip *this*".
+   */
+  habit?: Habit;
+  /**
+   * Skips the fold-away header. On the habit's own report the calendar is the content, not
+   * a detail tucked under a number, and it shares the collapsed/open preference with the
+   * report's copy — which would otherwise fold this one shut too.
+   */
+  alwaysOpen?: boolean;
 }) {
   const qc = useQueryClient();
   const [visibleMonth, setVisibleMonth] = useState(() => monthKey(today));
@@ -77,11 +91,11 @@ export default function HistoryCalendar({
   const { data: logs = [] } = useQuery<HabitLog[]>({
     queryKey: ["habitLog", "calendar", range, rangeTo],
     queryFn: () => api.getHabitLog(range, rangeTo) as Promise<HabitLog[]>,
-    enabled: prefs.open,
+    enabled: prefs.open || alwaysOpen,
   });
 
   const frozenDays = new Set(frozen);
-  const states = computeDayStates(habits, logs);
+  const states = habit ? singleHabitDayStates(habit, logs) : computeDayStates(habits, logs);
   const cells: Cell[] =
     prefs.mode === "month"
       ? buildMonthGrid(visibleMonth, today, states, frozenDays)
@@ -104,18 +118,20 @@ export default function HistoryCalendar({
 
   return (
     <View style={styles.wrap}>
-      <Pressable
-        onPress={toggleOpen}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: prefs.open }}
-        accessibilityLabel="Календарь привычек"
-        style={({ pressed }) => [styles.header, pressed && styles.dimmed]}
-      >
-        <Text style={[styles.headerText, accent ? { color: accent } : null]}>Календарь</Text>
-        <Feather name={prefs.open ? "chevron-up" : "chevron-down"} size={16} color={accent ?? colors.textMuted} />
-      </Pressable>
+      {!alwaysOpen && (
+        <Pressable
+          onPress={toggleOpen}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: prefs.open }}
+          accessibilityLabel="Календарь привычек"
+          style={({ pressed }) => [styles.header, pressed && styles.dimmed]}
+        >
+          <Text style={[styles.headerText, accent ? { color: accent } : null]}>Календарь</Text>
+          <Feather name={prefs.open ? "chevron-up" : "chevron-down"} size={16} color={accent ?? colors.textMuted} />
+        </Pressable>
+      )}
 
-      {prefs.open && (
+      {(prefs.open || alwaysOpen) && (
         <>
           <View style={styles.modeRow}>
             {([

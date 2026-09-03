@@ -5,6 +5,9 @@ import { api, STREAK_MILESTONES } from "../api/client";
 import { colors } from "../theme/colors";
 import { dateNDaysAgo } from "../lib/date";
 import { plural } from "../lib/plural";
+import { Feather } from "@expo/vector-icons";
+import { habitStats } from "../lib/habitStats";
+import { habitGroup } from "../lib/habits";
 import { STREAK_WINDOW_DAYS } from "../lib/streak";
 import { useStreak } from "../lib/useStreak";
 import { useTodayKey } from "../lib/useTodayKey";
@@ -15,7 +18,11 @@ import PhaseBar from "../components/PhaseBar";
 import HistoryCalendar from "../components/HistoryCalendar";
 import type { Habit, HabitLog, FocusSession, WeeklyReview } from "../types";
 
-export default function ReportScreen({ navigation }: { navigation: { navigate: (screen: string) => void } }) {
+export default function ReportScreen({
+  navigation,
+}: {
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void };
+}) {
   const qc = useQueryClient();
   // Re-renders when the local day turns over, so a report left open overnight
   // rolls onto the new week instead of freezing on yesterday.
@@ -68,6 +75,8 @@ export default function ReportScreen({ navigation }: { navigation: { navigate: (
 
   // Also where the weekly freeze is granted — see useStreak.
   const { streak, freezes } = useStreak(today);
+  // "Потом" has nothing to report until it has been done at least once.
+  const reportable = habits.filter((h) => habitGroup(h) !== "later" || streakLogs.some((l) => l.habitId === h.id && l.done));
   const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) ?? null;
   const [justCelebrated, setJustCelebrated] = useState<number | null>(null);
 
@@ -114,6 +123,46 @@ export default function ReportScreen({ navigation }: { navigation: { navigate: (
           measures from the previous milestone, so it can't say how far along the 66 days
           you are, and that is exactly what this is for. */}
       <PhaseBar streak={streak} onPress={() => navigation.navigate("Phases")} />
+
+      {/* Each habit's own run, which the ring above cannot show: it answers "did the whole
+          system hold today", so a habit added a week in inherits the whole streak. */}
+      {reportable.length > 0 && (
+        <>
+          <Text style={styles.sectionLabel}>По привычкам</Text>
+          {reportable.map((h) => {
+            const stats = habitStats(h, streakLogs, today, freezes);
+            return (
+              <Pressable
+                key={h.id}
+                onPress={() => navigation.navigate("HabitReport", { habitId: h.id, title: h.label })}
+                accessibilityRole="button"
+                accessibilityLabel={`${h.label}: ${stats.streak}`}
+                style={({ pressed }) => [styles.habitRow, pressed && styles.pressedRow]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.habitName} numberOfLines={1}>
+                    {h.label}
+                  </Text>
+                  <Text style={styles.subtleSmall}>
+                    {stats.streak > 0
+                      ? stats.unit === "days"
+                        ? `${stats.streak} ${plural(stats.streak, ["день", "дня", "дней"])} подряд`
+                        : `${stats.streak} ${plural(stats.streak, ["неделя", "недели", "недель"])} подряд`
+                      : "серии пока нет"}
+                  </Text>
+                </View>
+                {/* Seven dots, oldest on the left — a week at a glance without opening it. */}
+                <View style={styles.strip}>
+                  {stats.week.map((done, i) => (
+                    <View key={i} style={[styles.stripDot, done && styles.stripDotOn]} />
+                  ))}
+                </View>
+                <Feather name="chevron-right" size={16} color={colors.textMuted} />
+              </Pressable>
+            );
+          })}
+        </>
+      )}
 
       <View style={styles.sessionsCard}>
         <View style={{ flex: 1 }}>
@@ -209,4 +258,20 @@ const styles = StyleSheet.create({
   reviewLabel: { color: colors.text, fontSize: 14, fontWeight: "600" },
   reviewHint: { color: colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 3 },
   reviewChevron: { color: colors.textMuted, fontSize: 20 },
+
+  habitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  pressedRow: { opacity: 0.75 },
+  habitName: { color: colors.text, fontSize: 14, fontWeight: "500" },
+  strip: { flexDirection: "row", gap: 4 },
+  stripDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.cardBorder },
+  stripDotOn: { backgroundColor: colors.accentGreen },
 });

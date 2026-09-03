@@ -13,6 +13,7 @@ import ReminderScreen from "../screens/ReminderScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import LibraryScreen from "../screens/LibraryScreen";
 import PhasesScreen from "../screens/PhasesScreen";
+import HabitReportScreen from "../screens/HabitReportScreen";
 import ReviewScreen from "../screens/ReviewScreen";
 
 const Tab = createBottomTabNavigator();
@@ -97,6 +98,12 @@ export default function RootTabs() {
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: "Настройки" }} />
         <Stack.Screen name="Library" component={LibraryScreen} options={{ title: "Подсказки" }} />
         <Stack.Screen name="Phases" component={PhasesScreen} options={{ title: "Этапы" }} />
+        {/* Titled from the habit's own name, so the header says which one you opened. */}
+        <Stack.Screen
+          name="HabitReport"
+          component={HabitReportScreen}
+          options={({ route }) => ({ title: (route.params as { title?: string })?.title ?? "Привычка" })}
+        />
         <Stack.Screen name="Reminder" component={ReminderScreen} options={{ title: "Уведомления" }} />
         <Stack.Screen name="Review" component={ReviewScreen} options={{ title: "Сверка за неделю" }} />
       </Stack.Navigator>
