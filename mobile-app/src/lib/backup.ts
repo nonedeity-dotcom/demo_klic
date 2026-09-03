@@ -168,6 +168,8 @@ function parseData(raw: unknown): BackupData {
   );
 
   const milestones = list(d.milestones).filter(isNum);
+  // Absent in files written before freezes existed, which must still import.
+  const freezes = list(d.freezes).filter(isDateKey);
 
   const limit = isNum(d.screenTimeLimitMinutes) && d.screenTimeLimitMinutes > 0 ? d.screenTimeLimitMinutes : 180;
 
@@ -187,6 +189,7 @@ function parseData(raw: unknown): BackupData {
     sessions,
     question,
     milestones,
+    freezes,
     rewardOptions,
     rewards,
     reviews,

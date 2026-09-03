@@ -2,7 +2,7 @@ import { toDateKey } from "./date";
 import { weekStart } from "./week";
 import type { Habit, HabitLog } from "../types";
 
-export type DayState = "full" | "minimal" | "missed" | "future";
+export type DayState = "full" | "minimal" | "frozen" | "missed" | "future";
 
 export interface Cell {
   /** null for the blank leading cells a real month starts with. */
@@ -72,13 +72,22 @@ export function computeDayStates(habits: Habit[], logs: HabitLog[]): Map<string,
   return states;
 }
 
-function cellFor(key: string, today: string, states: Map<string, "full" | "minimal">, day: number): Cell {
-  const state: DayState = key > today ? "future" : (states.get(key) ?? "missed");
+function cellFor(
+  key: string,
+  today: string,
+  states: Map<string, "full" | "minimal">,
+  day: number,
+  frozen?: Set<string>,
+): Cell {
+  // A frozen day is drawn as its own thing, never as a done one: it kept the chain, it did
+  // not do the work, and showing it filled in would make the calendar lie about the month.
+  const state: DayState =
+    key > today ? "future" : (states.get(key) ?? (frozen?.has(key) ? "frozen" : "missed"));
   return { date: key, day, state, isToday: key === today };
 }
 
 /** The rolling window: whole weeks ending with the one containing today. */
-export function buildWeeksGrid(today: string, states: Map<string, "full" | "minimal">): Cell[] {
+export function buildWeeksGrid(today: string, states: Map<string, "full" | "minimal">, frozen?: Set<string>): Cell[] {
   const [y, m, d] = weekStart(today).split("-").map(Number);
   const start = new Date(y, m - 1, d);
   start.setDate(start.getDate() - (GRID_WEEKS - 1) * 7);
@@ -86,7 +95,7 @@ export function buildWeeksGrid(today: string, states: Map<string, "full" | "mini
   return Array.from({ length: GRID_WEEKS * 7 }, (_, i) => {
     const date = new Date(start);
     date.setDate(start.getDate() + i);
-    return cellFor(toDateKey(date), today, states, date.getDate());
+    return cellFor(toDateKey(date), today, states, date.getDate(), frozen);
   });
 }
 
@@ -95,7 +104,12 @@ export function buildWeeksGrid(today: string, states: Map<string, "full" | "mini
  * weekdays. That alignment is the point — a column of gaps under вс says
  * something a rolling strip of 28 days can't.
  */
-export function buildMonthGrid(key: string, today: string, states: Map<string, "full" | "minimal">): Cell[] {
+export function buildMonthGrid(
+  key: string,
+  today: string,
+  states: Map<string, "full" | "minimal">,
+  frozen?: Set<string>,
+): Cell[] {
   const [y, m] = key.split("-").map(Number);
   const first = new Date(y, m - 1, 1);
   const lead = (first.getDay() + 6) % 7; // Monday = 0
@@ -108,7 +122,7 @@ export function buildMonthGrid(key: string, today: string, states: Map<string, "
     isToday: false,
   }));
   for (let day = 1; day <= daysInMonth; day++) {
-    cells.push(cellFor(`${key}-${String(day).padStart(2, "0")}`, today, states, day));
+    cells.push(cellFor(`${key}-${String(day).padStart(2, "0")}`, today, states, day, frozen));
   }
   // Pad to whole rows so the grid doesn't reflow as months change length.
   while (cells.length % 7 !== 0) cells.push({ date: null, day: 0, state: "future", isToday: false });

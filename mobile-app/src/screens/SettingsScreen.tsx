@@ -45,12 +45,12 @@ function formatMinutes(min: number) {
 }
 
 function describeReminder(settings: ReminderSettings | null, status: ReminderStatus | null): string {
-  if (!settings || !status) return "Время и количество";
+  if (!settings || !status) return "Время, текст и уведомления об этапах";
   if (!settings.enabled) return "Выключено";
   if (status.permission !== "granted") return "Включено, но система не пропускает уведомления";
   const n = settings.times.length;
   const word = n === 1 ? "раз" : n < 5 ? "раза" : "раз";
-  return `${n} ${word} в день · ${settings.times.map((t) => `${pad(t.hour)}:${pad(t.minute)}`).join(", ")}`;
+  return `${n} ${word} в день · ${settings.times.map((t) => `${pad(t.hour)}:${pad(t.minute)}`).join(", ")} · плюс этапы`;
 }
 
 function pad(n: number) {
@@ -124,7 +124,7 @@ export default function SettingsScreen({ navigation }: { navigation: { navigate:
       <NotificationAccess onChanged={refreshReminder} />
       <View style={{ height: 10 }} />
       <Row
-        label="Напоминание"
+        label="Что и когда приходит"
         hint={reminderHint}
         onPress={() => navigation.navigate("Reminder")}
       />

@@ -12,6 +12,8 @@ export default function TriggersScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [newLabel, setNewLabel] = useState("");
+  /** Whether the per-row pencil and bin are on show. Off by default, and off again on exit. */
+  const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const { data: triggers = [] } = useQuery<Trigger[]>({
@@ -74,9 +76,27 @@ export default function TriggersScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
-      <Text style={styles.subtle}>
-        Убрано {removedCount} из {triggers.length}
-      </Text>
+      {/* Same as on the checklist: the pencil and the bin live behind one button rather than
+          sitting in every row next to the thing you tap. */}
+      <View style={styles.headerRow}>
+        <Text style={styles.subtle}>
+          Убрано {removedCount} из {triggers.length}
+        </Text>
+        <Pressable
+          onPress={() => {
+            setEditing((v) => !v);
+            setEditingId(null);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={editing ? "Выйти из редактирования" : "Редактировать список"}
+          style={({ pressed }) => [styles.editToggle, editing && styles.editToggleOn, pressed && styles.pressed]}
+        >
+          <Feather name={editing ? "check" : "edit-2"} size={13} color={editing ? colors.bg : colors.textMuted} />
+          <Text style={[styles.editToggleText, editing && styles.editToggleTextOn]}>
+            {editing ? "Готово" : "Изменить"}
+          </Text>
+        </Pressable>
+      </View>
       <Text style={[styles.subtle, { marginTop: 4, marginBottom: 20 }]}>
         сокращай постепенно, по одному — не всё сразу
       </Text>
@@ -117,12 +137,16 @@ export default function TriggersScreen() {
               <Text style={styles.label}>{t.label}</Text>
               <Text style={styles.status}>{t.removed ? "убрал" : "ещё нет"}</Text>
             </Pressable>
-            <Pressable onPress={() => startEdit(t)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${t.label}`}>
-              <Feather name="edit-2" size={14} color={colors.textMuted} />
-            </Pressable>
-            <Pressable onPress={() => confirmRemove(t)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${t.label}`}>
-              <Feather name="trash-2" size={14} color={colors.textMuted} />
-            </Pressable>
+            {editing && (
+              <>
+                <Pressable onPress={() => startEdit(t)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${t.label}`}>
+                  <Feather name="edit-2" size={14} color={colors.textMuted} />
+                </Pressable>
+                <Pressable onPress={() => confirmRemove(t)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${t.label}`}>
+                  <Feather name="trash-2" size={14} color={colors.textMuted} />
+                </Pressable>
+              </>
+            )}
           </View>
         );
       })}
@@ -157,6 +181,23 @@ export default function TriggersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  editToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+  },
+  editToggleOn: { backgroundColor: colors.accentGreen, borderColor: colors.accentGreen },
+  editToggleText: { color: colors.textMuted, fontSize: 12 },
+  editToggleTextOn: { color: colors.bg, fontWeight: "600" },
+  pressed: { opacity: 0.75 },
+
   subtle: { color: colors.textMuted, fontSize: 13 },
   card: {
     flexDirection: "row",

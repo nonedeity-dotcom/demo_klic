@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, Pressable, Switch, ScrollView, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, Switch, ScrollView, Linking, Platform, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import NotificationAccess from "../components/NotificationAccess";
+import { PHASE_STEPS } from "../lib/phase";
+import { phaseColors } from "../theme/colors";
+import {
+  getPhaseAlerts,
+  setPhaseAlert,
+  type PhaseAlerts,
+} from "../notifications/phaseAlerts";
 import {
   getReminderSettings,
   setReminderSettings,
   MAX_REMINDERS_PER_DAY,
+  DEFAULT_REMINDER_BODY,
   type ReminderFailure,
   type ReminderSettings,
   type ReminderTime,
@@ -25,13 +33,37 @@ function nextSlot(times: ReminderTime[]): ReminderTime {
   return { hour: (last.hour + 3) % 24, minute: last.minute };
 }
 
+/**
+ * Opens Android's battery-optimisation list. It is the only lever a person actually has over
+ * the couple of minutes a scheduled notification drifts by: Android batches ordinary alarms
+ * to avoid waking the processor for each one, and expo-notifications cannot ask for an exact
+ * one at all.
+ */
+async function openBatterySettings(): Promise<boolean> {
+  if (Platform.OS !== "android") return false;
+  try {
+    await Linking.sendIntent("android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS");
+    return true;
+  } catch {
+    // Some vendors don't ship that screen; the app's own settings page is one tap from it.
+    try {
+      await Linking.openSettings();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
 export default function ReminderScreen() {
   const [settings, setSettings] = useState<ReminderSettings | null>(null);
+  const [alerts, setAlerts] = useState<PhaseAlerts | null>(null);
   const [failure, setFailure] = useState<{ kind: ReminderFailure; detail?: string } | null>(null);
   const [statusKey, setStatusKey] = useState(0);
 
   useEffect(() => {
     getReminderSettings().then(setSettings);
+    getPhaseAlerts().then(setAlerts);
   }, []);
 
   const update = useCallback((next: ReminderSettings) => {
@@ -46,7 +78,7 @@ export default function ReminderScreen() {
     });
   }, []);
 
-  if (!settings) return null;
+  if (!settings || !alerts) return null;
 
   const patchTime = (index: number, patch: Partial<ReminderTime>) =>
     update({
@@ -70,7 +102,7 @@ export default function ReminderScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
       <Text style={styles.subtle}>
-        Ежедневные уведомления в одно и то же время — заглянуть в чек-лист
+        Всё, что приложение может прислать: когда придёт и что будет написано
       </Text>
 
       {/* Above the settings on purpose: a time picker is pointless if the OS
@@ -178,14 +210,126 @@ export default function ReminderScreen() {
               </Pressable>
             </View>
           </View>
+          {/* What this one actually says. Left empty it uses the shared default, which is
+              what every reminder said before they could be worded one by one. */}
+          <TextInput
+            value={time.text ?? ""}
+            onChangeText={(text) => patchTime(i, { text })}
+            placeholder={DEFAULT_REMINDER_BODY}
+            placeholderTextColor={colors.textMuted}
+            multiline
+            style={styles.textInput}
+            accessibilityLabel={`Текст напоминания ${i + 1}`}
+          />
         </View>
       ))}
+
+      <Text style={styles.sectionLabel}>Этапы</Text>
+      <Text style={styles.subtle}>
+        Приходит один раз за серию, когда начинается новый этап — при первом открытии
+        приложения в этот день
+      </Text>
+      {PHASE_STEPS.map((step) => {
+        const alert = alerts[step.id];
+        const tint = phaseColors[step.id];
+        return (
+          <View key={step.id} style={styles.timeCard}>
+            <View style={styles.phaseHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.phaseTitle, { color: tint }]}>{step.title}</Text>
+                <Text style={styles.timeIndex}>{`придёт на ${step.fromDay}-й день серии`}</Text>
+              </View>
+              <Switch
+                value={alert.enabled}
+                onValueChange={(enabled) => setPhaseAlert(step.id, { enabled }).then(setAlerts)}
+                accessibilityLabel={`Уведомление «${step.title}»`}
+                trackColor={{ false: colors.cardBorder, true: colors.accentGreenDark }}
+                thumbColor={colors.text}
+              />
+            </View>
+            <TextInput
+              value={alert.title}
+              onChangeText={(title) => setAlerts({ ...alerts, [step.id]: { ...alert, title } })}
+              onBlur={() => setPhaseAlert(step.id, { title: alert.title }).then(setAlerts)}
+              style={[styles.textInput, styles.titleInput]}
+              accessibilityLabel={`Заголовок уведомления «${step.title}»`}
+            />
+            <TextInput
+              value={alert.body}
+              onChangeText={(body) => setAlerts({ ...alerts, [step.id]: { ...alert, body } })}
+              onBlur={() => setPhaseAlert(step.id, { body: alert.body }).then(setAlerts)}
+              multiline
+              style={styles.textInput}
+              accessibilityLabel={`Текст уведомления «${step.title}»`}
+            />
+          </View>
+        );
+      })}
+
+      {/* Said once, plainly, rather than left to be discovered as a bug: the app asks for a
+          time and Android delivers around it. */}
+      {Platform.OS === "android" && (
+        <View style={styles.driftCard}>
+          <Text style={styles.driftText}>
+            Android может прислать уведомление на пару минут позже указанного времени — он
+            собирает будильники в группы, чтобы реже будить процессор. Точное время системе
+            не заказать. Сильные задержки обычно снимаются, если выключить экономию батареи
+            для приложения.
+          </Text>
+          <Pressable
+            onPress={openBatterySettings}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.batteryBtn, pressed && styles.dimmed]}
+          >
+            <Feather name="battery-charging" size={14} color={colors.text} />
+            <Text style={styles.batteryBtnText}>Экономия батареи</Text>
+          </Pressable>
+        </View>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  sectionLabel: { color: colors.textMuted, fontSize: 12, marginTop: 24, marginBottom: 8 },
+  phaseHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  phaseTitle: { fontSize: 15, fontWeight: "600" },
+  textInput: {
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+    minHeight: 44,
+  },
+  titleInput: { fontWeight: "600", minHeight: 0 },
+  driftCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 24,
+    gap: 12,
+  },
+  driftText: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
+  batteryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    paddingVertical: 12,
+  },
+  batteryBtnText: { color: colors.text, fontSize: 13, fontWeight: "500" },
   subtle: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 16 },
   enableRow: {
     flexDirection: "row",

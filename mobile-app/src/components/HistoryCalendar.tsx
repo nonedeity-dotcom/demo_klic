@@ -36,6 +36,7 @@ export default function HistoryCalendar({
   today,
   habits,
   accent,
+  frozen = [],
 }: {
   today: string;
   habits: Habit[];
@@ -45,6 +46,8 @@ export default function HistoryCalendar({
    * stretch, and recolouring it would turn a fact into decoration.
    */
   accent?: string;
+  /** Days kept by the weekly freeze — drawn as their own state, not as done. */
+  frozen?: string[];
 }) {
   const qc = useQueryClient();
   const [visibleMonth, setVisibleMonth] = useState(() => monthKey(today));
@@ -77,13 +80,17 @@ export default function HistoryCalendar({
     enabled: prefs.open,
   });
 
+  const frozenDays = new Set(frozen);
   const states = computeDayStates(habits, logs);
   const cells: Cell[] =
-    prefs.mode === "month" ? buildMonthGrid(visibleMonth, today, states) : buildWeeksGrid(today, states);
+    prefs.mode === "month"
+      ? buildMonthGrid(visibleMonth, today, states, frozenDays)
+      : buildWeeksGrid(today, states, frozenDays);
   const counted = countedDays(cells);
   const elapsed = elapsedDays(cells);
   const delta = compareWithPrevious(prefs.mode, visibleMonth, today, states);
   const hasMinimal = cells.some((c) => c.state === "minimal");
+  const hasFrozen = cells.some((c) => c.state === "frozen");
 
   const currentMonth = monthKey(today);
   const canGoBack = earliest !== null && shiftMonth(visibleMonth, -1) >= monthKey(earliest);
@@ -173,6 +180,7 @@ export default function HistoryCalendar({
                     cell.date === null && styles.cellBlank,
                     cell.state === "full" && styles.cellFull,
                     cell.state === "minimal" && styles.cellMinimal,
+                    cell.state === "frozen" && styles.cellFrozen,
                     cell.date !== null && cell.state === "future" && styles.cellFuture,
                     cell.isToday && styles.cellToday,
                   ]}
@@ -204,12 +212,22 @@ export default function HistoryCalendar({
             )}
           </View>
 
-          {hasMinimal && (
+          {(hasMinimal || hasFrozen) && (
             <View style={styles.legend}>
-              <View style={[styles.swatch, styles.cellFull]} />
-              <Text style={styles.legendText}>полностью</Text>
-              <View style={[styles.swatch, styles.cellMinimal]} />
-              <Text style={styles.legendText}>по минимуму</Text>
+              {hasMinimal && (
+                <>
+                  <View style={[styles.swatch, styles.cellFull]} />
+                  <Text style={styles.legendText}>полностью</Text>
+                  <View style={[styles.swatch, styles.cellMinimal]} />
+                  <Text style={styles.legendText}>по минимуму</Text>
+                </>
+              )}
+              {hasFrozen && (
+                <>
+                  <View style={[styles.swatch, styles.cellFrozen]} />
+                  <Text style={styles.legendText}>пропуск, серия цела</Text>
+                </>
+              )}
             </View>
           )}
         </>
@@ -254,6 +272,9 @@ const styles = StyleSheet.create({
   cellBlank: { backgroundColor: "transparent" },
   cellFull: { backgroundColor: colors.accentGreen },
   cellMinimal: { backgroundColor: colors.accentGreenDark, opacity: 0.55 },
+  // Outlined, not filled: the day held the chain but nothing was done on it, and a fill
+  // would read as another done day when you glance at the month.
+  cellFrozen: { borderWidth: 1, borderColor: colors.accentGreen, borderStyle: "dashed" },
   cellFuture: { backgroundColor: "#1a1e25" },
   cellToday: { borderWidth: 2, borderColor: colors.accent },
   dayNumber: { color: colors.textMuted, fontSize: 9 },

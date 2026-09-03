@@ -33,6 +33,7 @@ const KEYS = {
   reviews: "weekly-reviews-v1",
   tasks: "tasks-v1",
   calendarPrefs: "calendar-prefs-v1",
+  freezes: "streak-freezes-v1",
 };
 
 export interface CalendarPrefs {
@@ -209,15 +210,45 @@ export const api = {
    * counts as done — a small day is the thing that keeps the chain alive —
    * but it is recorded separately so the report can tell them apart.
    */
-  async toggleHabit(habitId: string, date: string, done: boolean, minimal = false): Promise<HabitLog> {
+  /**
+   * `manual` marks the change as a person's tap rather than a fill-in from creker. Once a
+   * day is set by hand it stays that way: see syncScreenTimeHabit, which reads the flag
+   * back and leaves such a day alone.
+   */
+  async toggleHabit(habitId: string, date: string, done: boolean, minimal = false, manual = false): Promise<HabitLog> {
     return withKeyLock(KEYS.habitLog, async () => {
       const logs = await read<HabitLog[]>(KEYS.habitLog, []);
       const existing = logs.find((l) => l.habitId === habitId && l.date === date);
+      // Never cleared by an automatic write: a sync passing manual=false must not erase the
+      // flag a tap set earlier in the day.
+      const manualFlag = manual || existing?.manual === true;
       const entry: HabitLog = existing
-        ? { ...existing, done, minimal: done ? minimal : false }
-        : { id: uid(), habitId, date, done, minimal: done ? minimal : false };
+        ? { ...existing, done, minimal: done ? minimal : false, manual: manualFlag }
+        : { id: uid(), habitId, date, done, minimal: done ? minimal : false, manual: manualFlag };
       await write(KEYS.habitLog, existing ? logs.map((l) => (l === existing ? entry : l)) : [...logs, entry]);
       return entry;
+    });
+  },
+
+  /**
+   * Days that were skipped but did not break the chain — see freezeCandidate. Stored as a
+   * plain list of dates, granted once and never recomputed: a freeze that could be
+   * re-derived on every render would change the streak under someone who had already read
+   * it.
+   */
+  async getFreezes(): Promise<string[]> {
+    const stored = await read<string[]>(KEYS.freezes, []);
+    return stored.filter((d) => typeof d === "string");
+  },
+
+  /** Records a freeze for `date`. Idempotent — granting the same day twice is a no-op. */
+  async grantFreeze(date: string): Promise<string[]> {
+    return withKeyLock(KEYS.freezes, async () => {
+      const current = await read<string[]>(KEYS.freezes, []);
+      if (current.includes(date)) return current;
+      const next = [...current, date].sort();
+      await write(KEYS.freezes, next);
+      return next;
     });
   },
 
@@ -517,6 +548,8 @@ export interface BackupData {
   sessions: FocusSession[];
   question: DailyQuestion[];
   milestones: number[];
+  /** Days skipped under the weekly freeze — without these a restore silently shortens the streak. */
+  freezes: string[];
   rewardOptions: RewardOption[];
   rewards: Reward[];
   reviews: WeeklyReview[];
@@ -564,7 +597,7 @@ function withAllKeyLocks<T>(job: () => Promise<T>): Promise<T> {
 /** Reads the whole local database. Nothing is filtered — this is the backup. */
 export async function exportData(): Promise<BackupData> {
   await ensureSeeded();
-  const [habits, habitLog, triggers, energy, sessions, question, milestones, rewardOptions, rewards, reviews, tasks, limit, focusIntervals] =
+  const [habits, habitLog, triggers, energy, sessions, question, milestones, freezes, rewardOptions, rewards, reviews, tasks, limit, focusIntervals] =
     await Promise.all([
       read<Habit[]>(KEYS.habits, []),
       read<HabitLog[]>(KEYS.habitLog, []),
@@ -573,6 +606,7 @@ export async function exportData(): Promise<BackupData> {
       read<FocusSession[]>(KEYS.sessions, []),
       read<DailyQuestion[]>(KEYS.question, []),
       read<number[]>(KEYS.milestones, []),
+      read<string[]>(KEYS.freezes, []),
       read<RewardOption[]>(KEYS.rewardOptions, []),
       read<Reward[]>(KEYS.rewards, []),
       read<WeeklyReview[]>(KEYS.reviews, []),
@@ -588,6 +622,7 @@ export async function exportData(): Promise<BackupData> {
     sessions,
     question,
     milestones,
+    freezes,
     rewardOptions,
     rewards,
     reviews,
@@ -608,6 +643,7 @@ export async function replaceData(data: BackupData): Promise<ImportStats> {
       write(KEYS.sessions, data.sessions),
       write(KEYS.question, data.question),
       write(KEYS.milestones, data.milestones),
+      write(KEYS.freezes, data.freezes),
       write(KEYS.rewardOptions, data.rewardOptions),
       write(KEYS.rewards, data.rewards),
       write(KEYS.reviews, data.reviews),
@@ -777,6 +813,13 @@ export async function mergeData(data: BackupData): Promise<ImportStats> {
     const milestones = await read<number[]>(KEYS.milestones, []);
     const merged = [...new Set([...milestones, ...data.milestones])].sort((a, b) => a - b);
     if (merged.length !== milestones.length) await write(KEYS.milestones, merged);
+
+    // --- freezes: union as well. A freeze is a fact about a day, so two devices that each
+    // spent one in the same week both keep theirs; the weekly budget guards granting new
+    // ones, not importing days that were already spent. ---
+    const freezes = await read<string[]>(KEYS.freezes, []);
+    const mergedFreezes = [...new Set([...freezes, ...data.freezes])].sort();
+    if (mergedFreezes.length !== freezes.length) await write(KEYS.freezes, mergedFreezes);
 
     // The screen-time limit is a setting of *this* phone, not history — merging
     // deliberately leaves it alone.

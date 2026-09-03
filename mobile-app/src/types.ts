@@ -27,6 +27,13 @@ export interface HabitLog {
    * a month of minimums doesn't read as a month of full days.
    */
   minimal?: boolean;
+  /**
+   * True when a person set this state by tapping, rather than it being filled in from
+   * creker's screen-time numbers. Only the auto-ticked habit ever has it, and it is what
+   * stops the sync from overruling a deliberate untick on the next visit to the tab —
+   * before this, unticking "Экранное время в норме" lasted until you switched tabs.
+   */
+  manual?: boolean;
 }
 
 export interface Trigger {

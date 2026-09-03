@@ -1,15 +1,11 @@
 import { View, Text, ScrollView, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../api/client";
 import { colors, phaseColors, withAlpha } from "../theme/colors";
-import { dateNDaysAgo } from "../lib/date";
 import { useTodayKey } from "../lib/useTodayKey";
 import { plural } from "../lib/plural";
-import { computeStreak, STREAK_WINDOW_DAYS } from "../lib/streak";
+import { useStreak } from "../lib/useStreak";
 import { AUTOPILOT_DAY, PHASE_STEPS, phaseStepFor } from "../lib/phase";
 import PhaseArt from "../components/PhaseArt";
-import type { Habit, HabitLog } from "../types";
 
 /**
  * What the four stretches are, with the one you're in marked.
@@ -20,7 +16,7 @@ import type { Habit, HabitLog } from "../types";
  */
 export default function PhasesScreen() {
   const today = useTodayKey();
-  const streak = useStreak(today);
+  const { streak } = useStreak(today);
   const current = phaseStepFor(streak);
   const currentTint = current ? phaseColors[current.id] : colors.textMuted;
   const left = Math.max(0, AUTOPILOT_DAY - streak);
@@ -76,24 +72,6 @@ export default function PhasesScreen() {
 
     </ScrollView>
   );
-}
-
-/**
- * The same count the report shows, from the same function — a number passed in as a route
- * param would freeze at navigation time and go stale the moment a habit is ticked, and the
- * queries it reads from are already cached by the report.
- */
-function useStreak(today: string): number {
-  const windowStart = dateNDaysAgo(STREAK_WINDOW_DAYS);
-  const { data: habits = [] } = useQuery<Habit[]>({
-    queryKey: ["habits"],
-    queryFn: () => api.getHabits() as Promise<Habit[]>,
-  });
-  const { data: logs = [] } = useQuery<HabitLog[]>({
-    queryKey: ["habitLog", "streak", windowStart, today],
-    queryFn: () => api.getHabitLog(windowStart, today) as Promise<HabitLog[]>,
-  });
-  return computeStreak(habits, logs);
 }
 
 /** Big enough to read the drawing, small enough that four cards still fit on one screen. */

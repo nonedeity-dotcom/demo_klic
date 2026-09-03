@@ -5,7 +5,8 @@ import { api, STREAK_MILESTONES } from "../api/client";
 import { colors } from "../theme/colors";
 import { dateNDaysAgo } from "../lib/date";
 import { plural } from "../lib/plural";
-import { computeStreak, STREAK_WINDOW_DAYS } from "../lib/streak";
+import { STREAK_WINDOW_DAYS } from "../lib/streak";
+import { useStreak } from "../lib/useStreak";
 import { useTodayKey } from "../lib/useTodayKey";
 import { weekKey, dayOfWeek } from "../lib/week";
 import RotatingTip from "../components/RotatingTip";
@@ -65,7 +66,8 @@ export default function ReportScreen({ navigation }: { navigation: { navigate: (
   // Friday onwards: earlier in the week there is not much of a week to review.
   const reviewDue = !reviewWritten && dayOfWeek(today) >= 5;
 
-  const streak = computeStreak(habits, streakLogs);
+  // Also where the weekly freeze is granted — see useStreak.
+  const { streak, freezes } = useStreak(today);
   const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) ?? null;
   const [justCelebrated, setJustCelebrated] = useState<number | null>(null);
 
@@ -105,7 +107,7 @@ export default function ReportScreen({ navigation }: { navigation: { navigate: (
           subject as the number above it, and it is not what the screen is
           opened for. */}
       <StreakRing streak={streak} hasHistory={hasHistory}>
-        {(tint) => <HistoryCalendar today={today} habits={habits} accent={tint} />}
+        {(tint) => <HistoryCalendar today={today} habits={habits} accent={tint} frozen={freezes} />}
       </StreakRing>
 
       {/* The whole road with its stretches marked. Shown at every streak length: the ring

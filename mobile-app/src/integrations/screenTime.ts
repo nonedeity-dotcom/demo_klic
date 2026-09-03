@@ -1,7 +1,7 @@
 import { getCrekerScreenTime } from "../../modules/creker-usage";
 import { api } from "../api/client";
 import { decideScreenTimeHabit } from "../lib/screenTime";
-import type { Habit } from "../types";
+import type { Habit, HabitLog } from "../types";
 
 /**
  * Auto-ticks (or un-ticks) the "screentime" habit for `date` from creker's data,
@@ -17,6 +17,11 @@ import type { Habit } from "../types";
 export async function syncScreenTimeHabit(habits: Habit[], date: string): Promise<boolean> {
   const target = habits.find((h) => h.auto === "screentime");
   if (!target) return false;
+
+  // A day the person set by hand is theirs: unticking "экранное время в норме" used to last
+  // only until the next visit to the tab, when this sync quietly put it back.
+  const logs = (await api.getHabitLog(date, date)) as HabitLog[];
+  if (logs.some((l) => l.habitId === target.id && l.manual)) return false;
 
   const rows = await getCrekerScreenTime(date, date);
   const row = rows.find((r) => r.date === date);

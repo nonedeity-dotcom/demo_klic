@@ -12,7 +12,15 @@ const LEGACY_ID_KEY = "reminder-notification-id-v1";
 export interface ReminderTime {
   hour: number;
   minute: number;
+  /**
+   * What this one says. Optional: an empty slot uses DEFAULT_REMINDER_BODY, which is also
+   * what every reminder said before they could be worded individually.
+   */
+  text?: string;
 }
+
+export const DEFAULT_REMINDER_TITLE = "Не сбивай ритм";
+export const DEFAULT_REMINDER_BODY = "Загляни в чек-лист привычек — ещё есть время сегодня.";
 
 export interface ReminderSettings {
   /** One entry per notification per day, in the order shown. */
@@ -70,6 +78,11 @@ function isTime(v: unknown): v is ReminderTime {
   );
 }
 
+/** The slot's own wording, or the shared default when it has none. */
+export function reminderBody(time: ReminderTime): string {
+  return time.text?.trim() ? time.text.trim() : DEFAULT_REMINDER_BODY;
+}
+
 /** Accepts both the current shape and the single-time one that came before it. */
 export function normalizeSettings(raw: unknown): ReminderSettings {
   if (typeof raw !== "object" || raw === null) return DEFAULT_SETTINGS;
@@ -78,7 +91,14 @@ export function normalizeSettings(raw: unknown): ReminderSettings {
 
   const times = Array.isArray(o.times) ? o.times.filter(isTime) : [];
   if (times.length > 0) {
-    return { enabled, times: times.slice(0, MAX_REMINDERS_PER_DAY).map((t) => ({ ...t })) };
+    return {
+      enabled,
+      times: times.slice(0, MAX_REMINDERS_PER_DAY).map((t) => ({
+        hour: t.hour,
+        minute: t.minute,
+        ...(typeof t.text === "string" && t.text.trim() ? { text: t.text.trim() } : {}),
+      })),
+    };
   }
   // Legacy: { hour, minute, enabled }.
   if (isTime(o)) return { enabled, times: [{ hour: o.hour as number, minute: o.minute as number }] };
@@ -186,10 +206,7 @@ export async function setReminderSettings(settings: ReminderSettings): Promise<A
     for (const time of wanted.times) {
       try {
         const id = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "Не сбивай ритм",
-            body: "Загляни в чек-лист привычек — ещё есть время сегодня.",
-          },
+          content: { title: DEFAULT_REMINDER_TITLE, body: reminderBody(time) },
           trigger: { hour: time.hour, minute: time.minute, repeats: true },
         });
         ids.push(id);

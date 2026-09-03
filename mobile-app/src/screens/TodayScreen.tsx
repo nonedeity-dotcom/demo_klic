@@ -13,6 +13,8 @@ export default function TodayScreen() {
   const qc = useQueryClient();
   const today = useTodayKey();
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** Whether the per-row pencil and bin are on show. Off by default, and off again on exit. */
+  const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState("");
   const [editMinimal, setEditMinimal] = useState("");
   const [newLabel, setNewLabel] = useState("");
@@ -39,8 +41,10 @@ export default function TodayScreen() {
   }, [habits.length, today]);
 
   const toggle = useMutation({
+    // manual=true: every tick on this screen is a person's decision, and the creker sync
+    // must not overrule it later in the day.
     mutationFn: ({ habitId, done, minimal }: { habitId: string; done: boolean; minimal?: boolean }) =>
-      api.toggleHabit(habitId, today, done, minimal ?? false),
+      api.toggleHabit(habitId, today, done, minimal ?? false, true),
     // Optimistic update so the checkbox feels instant instead of waiting
     // on a round trip — same snappy feel as the original local-storage demo.
     onMutate: async ({ habitId, done, minimal }) => {
@@ -128,9 +132,27 @@ export default function TodayScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
-      <Text style={styles.subtle}>
-        Сегодня выполнено {doneCount} из {habits.length}
-      </Text>
+      {/* The pencil and the bin used to sit in every row, permanently, next to the thing you
+          tap ten times a week. One button puts them behind a deliberate act instead. */}
+      <View style={styles.headerRow}>
+        <Text style={styles.subtle}>
+          Сегодня выполнено {doneCount} из {habits.length}
+        </Text>
+        <Pressable
+          onPress={() => {
+            setEditing((v) => !v);
+            setEditingId(null);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={editing ? "Выйти из редактирования" : "Редактировать список"}
+          style={({ pressed }) => [styles.editToggle, editing && styles.editToggleOn, pressed && styles.pressed]}
+        >
+          <Feather name={editing ? "check" : "edit-2"} size={13} color={editing ? colors.bg : colors.textMuted} />
+          <Text style={[styles.editToggleText, editing && styles.editToggleTextOn]}>
+            {editing ? "Готово" : "Изменить"}
+          </Text>
+        </Pressable>
+      </View>
       <View style={{ height: 16 }} />
       {habits.map((h) => {
         const log = logs.find((l) => l.habitId === h.id);
@@ -205,12 +227,16 @@ export default function TodayScreen() {
               </View>
             </Pressable>
 
-            <Pressable onPress={() => startEdit(h)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${h.label}`}>
-              <Feather name="edit-2" size={14} color={colors.textMuted} />
-            </Pressable>
-            <Pressable onPress={() => confirmRemove(h)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${h.label}`}>
-              <Feather name="trash-2" size={14} color={colors.textMuted} />
-            </Pressable>
+            {editing && (
+              <>
+                <Pressable onPress={() => startEdit(h)} style={styles.iconBtn} accessibilityLabel={`Изменить: ${h.label}`}>
+                  <Feather name="edit-2" size={14} color={colors.textMuted} />
+                </Pressable>
+                <Pressable onPress={() => confirmRemove(h)} style={styles.iconBtn} accessibilityLabel={`Удалить: ${h.label}`}>
+                  <Feather name="trash-2" size={14} color={colors.textMuted} />
+                </Pressable>
+              </>
+            )}
           </View>
 
           {/* Only where a minimal version was declared. Ticking it keeps the
@@ -270,6 +296,23 @@ export default function TodayScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  editToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+  },
+  editToggleOn: { backgroundColor: colors.accentGreen, borderColor: colors.accentGreen },
+  editToggleText: { color: colors.textMuted, fontSize: 12 },
+  editToggleTextOn: { color: colors.bg, fontWeight: "600" },
+  pressed: { opacity: 0.75 },
+
   subtle: { color: colors.textMuted, fontSize: 13 },
   habitBlock: { marginBottom: 10 },
   editCard: {
