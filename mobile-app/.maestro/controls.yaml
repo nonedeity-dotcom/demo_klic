@@ -53,7 +53,9 @@ appId: com.yourcompany.noburnout
 # if a future image asks, the button below is what the user would tap.
 - assertVisible: "Доступ к уведомлениям есть"
 - takeScreenshot: notification-access
-- tapOn: "Напоминание"
+# The settings row was renamed when it grew from a time picker into the whole list of
+# what the app can send.
+- tapOn: "Что и когда приходит"
 # Top to bottom: the switch sits above the count, which sits above the slots.
 - tapOn: "Включить напоминания"
 - scrollUntilVisible:
