@@ -5,7 +5,6 @@ import type {
   Trigger,
   EnergyLog,
   FocusSession,
-  DailyQuestion,
   RewardOption,
   Reward,
   Task,
@@ -23,7 +22,6 @@ const KEYS = {
   triggers: "triggers-list-v1",
   energy: "energy-log-v1",
   sessions: "timer-stats-v1",
-  question: "daily-question-v1",
   milestones: "celebrated-milestones-v1",
   rewardOptions: "reward-options-v1",
   rewards: "rewards-log-v1",
@@ -323,19 +321,6 @@ export const api = {
     });
   },
 
-  async getQuestion(from: string, to: string): Promise<DailyQuestion[]> {
-    const questions = await read<DailyQuestion[]>(KEYS.question, []);
-    return questions.filter((q) => inRange(q.date, from, to));
-  },
-  async setQuestion(date: string, text: string): Promise<DailyQuestion> {
-    return withKeyLock(KEYS.question, async () => {
-      const questions = await read<DailyQuestion[]>(KEYS.question, []);
-      const existing = questions.find((q) => q.date === date);
-      const entry: DailyQuestion = { date, text };
-      await write(KEYS.question, existing ? questions.map((q) => (q === existing ? entry : q)) : [...questions, entry]);
-      return entry;
-    });
-  },
 
   async getTasks(): Promise<Task[]> {
     return read(KEYS.tasks, []);
@@ -546,7 +531,6 @@ export interface BackupData {
   triggers: Trigger[];
   energy: EnergyLog[];
   sessions: FocusSession[];
-  question: DailyQuestion[];
   milestones: number[];
   /** Days skipped under the weekly freeze — without these a restore silently shortens the streak. */
   freezes: string[];
@@ -565,7 +549,6 @@ export interface ImportStats {
   triggers: number;
   sessions: number;
   energy: number;
-  question: number;
   rewards: number;
   reviews: number;
   tasks: number;
@@ -577,7 +560,6 @@ const EMPTY_STATS: ImportStats = {
   triggers: 0,
   sessions: 0,
   energy: 0,
-  question: 0,
   rewards: 0,
   reviews: 0,
   tasks: 0,
@@ -597,14 +579,13 @@ function withAllKeyLocks<T>(job: () => Promise<T>): Promise<T> {
 /** Reads the whole local database. Nothing is filtered — this is the backup. */
 export async function exportData(): Promise<BackupData> {
   await ensureSeeded();
-  const [habits, habitLog, triggers, energy, sessions, question, milestones, freezes, rewardOptions, rewards, reviews, tasks, limit, focusIntervals] =
+  const [habits, habitLog, triggers, energy, sessions, milestones, freezes, rewardOptions, rewards, reviews, tasks, limit, focusIntervals] =
     await Promise.all([
       read<Habit[]>(KEYS.habits, []),
       read<HabitLog[]>(KEYS.habitLog, []),
       read<Trigger[]>(KEYS.triggers, []),
       read<EnergyLog[]>(KEYS.energy, []),
       read<FocusSession[]>(KEYS.sessions, []),
-      read<DailyQuestion[]>(KEYS.question, []),
       read<number[]>(KEYS.milestones, []),
       read<string[]>(KEYS.freezes, []),
       read<RewardOption[]>(KEYS.rewardOptions, []),
@@ -620,7 +601,6 @@ export async function exportData(): Promise<BackupData> {
     triggers,
     energy,
     sessions,
-    question,
     milestones,
     freezes,
     rewardOptions,
@@ -641,7 +621,6 @@ export async function replaceData(data: BackupData): Promise<ImportStats> {
       write(KEYS.triggers, data.triggers),
       write(KEYS.energy, data.energy),
       write(KEYS.sessions, data.sessions),
-      write(KEYS.question, data.question),
       write(KEYS.milestones, data.milestones),
       write(KEYS.freezes, data.freezes),
       write(KEYS.rewardOptions, data.rewardOptions),
@@ -657,7 +636,6 @@ export async function replaceData(data: BackupData): Promise<ImportStats> {
       triggers: data.triggers.length,
       sessions: data.sessions.length,
       energy: data.energy.length,
-      question: data.question.length,
       rewards: data.rewards.length,
       reviews: data.reviews.length,
       tasks: data.tasks.length,
@@ -765,16 +743,6 @@ export async function mergeData(data: BackupData): Promise<ImportStats> {
     }
     if (stats.energy > 0) await write(KEYS.energy, energy);
 
-    // --- daily question (one per date) ---
-    const questions = await read<DailyQuestion[]>(KEYS.question, []);
-    const seenDates = new Set(questions.map((q) => q.date));
-    for (const q of data.question) {
-      if (seenDates.has(q.date)) continue;
-      seenDates.add(q.date);
-      questions.push(q);
-      stats.question++;
-    }
-    if (stats.question > 0) await write(KEYS.question, questions);
 
     // --- rewards ---
     const rewards = await read<Reward[]>(KEYS.rewards, []);

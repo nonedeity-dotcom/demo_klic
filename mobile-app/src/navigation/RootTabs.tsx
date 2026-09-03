@@ -8,7 +8,6 @@ import { colors } from "../theme/colors";
 import ChecklistScreen from "../screens/ChecklistScreen";
 import FocusScreen from "../screens/FocusScreen";
 import EnergyScreen from "../screens/EnergyScreen";
-import QuestionScreen from "../screens/QuestionScreen";
 import ReportScreen from "../screens/ReportScreen";
 import ReminderScreen from "../screens/ReminderScreen";
 import SettingsScreen from "../screens/SettingsScreen";
@@ -42,10 +41,9 @@ function Tabs() {
         tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.cardBorder },
-        // Five tabs now that the checklist and the triggers share one — ~64px each on a
-        // 320px screen instead of ~53, so the labels can come back up from the 9px that
-        // six of them forced.
-        tabBarLabelStyle: { fontSize: 11 },
+        // Four tabs — ~80px each on a 320px screen, so the labels have room they never had
+        // when there were seven.
+        tabBarLabelStyle: { fontSize: 12 },
         tabBarItemStyle: { paddingHorizontal: 0 },
       }}
     >
@@ -57,7 +55,6 @@ function Tabs() {
       <Tab.Screen name="Чек-лист" component={ChecklistScreen} options={{ tabBarIcon: icon("check-square") }} />
       <Tab.Screen name="Фокус" component={FocusScreen} options={{ tabBarIcon: icon("target") }} />
       <Tab.Screen name="Энергия" component={EnergyScreen} options={{ tabBarIcon: icon("activity") }} />
-      <Tab.Screen name="Вопрос" component={QuestionScreen} options={{ tabBarIcon: icon("help-circle") }} />
     </Tab.Navigator>
   );
 }

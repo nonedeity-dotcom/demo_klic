@@ -55,10 +55,6 @@ export interface FocusSession {
   completedAt: string;
 }
 
-export interface DailyQuestion {
-  date: string;
-  text: string;
-}
 
 /**
  * A thing to do, tagged by what it demands of you.

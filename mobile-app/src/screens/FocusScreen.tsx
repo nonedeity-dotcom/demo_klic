@@ -5,6 +5,8 @@ import { Feather } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, DEFAULT_FOCUS_INTERVALS, type FocusIntervals } from "../api/client";
 import { colors } from "../theme/colors";
+import TipCard from "../components/TipCard";
+import { TIPS, rotationNumber } from "../content/library";
 import { todayKey } from "../lib/date";
 import type { RewardOption } from "../types";
 
@@ -22,6 +24,12 @@ const PRESETS: FocusIntervals[] = [
   { workMin: 90, breakMin: 20 },
 ];
 
+/**
+ * The sound tip, pulled from the reference by id. Content lives in library.ts and nowhere
+ * else, so the wording here and in the Подсказки screen can never drift apart.
+ */
+const SOUND_TIP = TIPS.find((t) => t.id === "focus-sound")!;
+
 export default function FocusScreen() {
   const qc = useQueryClient();
   const [mode, setMode] = useState<"work" | "break">("work");
@@ -36,6 +44,7 @@ export default function FocusScreen() {
   const breakMin = intervals.breakMin;
 
   const [editing, setEditing] = useState(false);
+  const [soundTipOpen, setSoundTipOpen] = useState(false);
   const [draft, setDraft] = useState<FocusIntervals>(DEFAULT_FOCUS_INTERVALS);
 
   const [secondsLeft, setSecondsLeft] = useState(DEFAULT_FOCUS_INTERVALS.workMin * 60);
@@ -351,6 +360,18 @@ export default function FocusScreen() {
         </View>
       )}
 
+      {/* The one piece of the source that belongs on this screen rather than only in the
+          reference: what to have playing, and what not to have playing before you start.
+          Rendered through TipCard so it reads and behaves like every other tip. */}
+      <View style={styles.tipSlot}>
+        <TipCard
+          tip={SOUND_TIP}
+          expanded={soundTipOpen}
+          onToggle={() => setSoundTipOpen((v) => !v)}
+          number={rotationNumber(SOUND_TIP.id)}
+        />
+      </View>
+
       <Modal visible={showReward} transparent animationType="fade" onRequestClose={() => setShowReward(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -432,6 +453,8 @@ export default function FocusScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { alignItems: "center", paddingTop: 40, paddingHorizontal: 24, paddingBottom: 40 },
+  // The tip is the one full-width thing on a screen that centres everything else.
+  tipSlot: { alignSelf: "stretch", marginTop: 28 },
   subtle: { color: colors.textMuted, fontSize: 13 },
   timerText: { color: colors.text, fontSize: 40, fontWeight: "700", fontVariant: ["tabular-nums"] },
   timerLabel: { color: colors.textMuted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", marginTop: 4 },

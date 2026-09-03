@@ -21,7 +21,6 @@ import type {
   Trigger,
   EnergyLog,
   FocusSession,
-  DailyQuestion,
   RewardOption,
   Reward,
   Task,
@@ -137,9 +136,6 @@ function parseData(raw: unknown): BackupData {
       : null,
   );
 
-  const question = pickValid<DailyQuestion>(d.question, (q) =>
-    isDateKey(q.date) && isStr(q.text) ? { date: q.date, text: q.text } : null,
-  );
 
   const rewardOptions = pickValid<RewardOption>(d.rewardOptions, (o) =>
     isStr(o.id) && isStr(o.label) ? { id: o.id, label: o.label } : null,
@@ -187,7 +183,6 @@ function parseData(raw: unknown): BackupData {
     triggers,
     energy,
     sessions,
-    question,
     milestones,
     freezes,
     rewardOptions,
@@ -235,7 +230,6 @@ export function parseBackupText(text: string): ParsedBackup {
     data.triggers.length === 0 &&
     data.sessions.length === 0 &&
     data.energy.length === 0 &&
-    data.question.length === 0 &&
     data.rewards.length === 0 &&
     data.reviews.length === 0 &&
     data.tasks.length === 0;
