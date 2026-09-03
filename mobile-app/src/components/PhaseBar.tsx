@@ -1,6 +1,6 @@
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { colors } from "../theme/colors";
+import { colors, phaseColors, withAlpha } from "../theme/colors";
 import { AUTOPILOT_DAY, PHASE_MARKS, phaseStepFor } from "../lib/phase";
 import { plural } from "../lib/plural";
 
@@ -16,16 +16,21 @@ import { plural } from "../lib/plural";
 export default function PhaseBar({ streak, onPress }: { streak: number; onPress: () => void }) {
   const pct = Math.min(100, (streak / AUTOPILOT_DAY) * 100);
   const step = phaseStepFor(streak);
+  const tint = step ? phaseColors[step.id] : colors.accentGreen;
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Этапы: ${step ? step.title : "серии пока нет"}, ${streak} из ${AUTOPILOT_DAY} дней`}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.card,
+        step && { borderColor: withAlpha(tint, 0.45), backgroundColor: withAlpha(tint, 0.05) },
+        pressed && styles.pressed,
+      ]}
     >
       <View style={styles.header}>
-        <Text style={styles.title}>{step ? step.title : "Этапы"}</Text>
+        <Text style={[styles.title, step && { color: tint }]}>{step ? step.title : "Этапы"}</Text>
         <View style={styles.headerRight}>
           <Text style={styles.subtle}>{step ? step.range : "путь до 66 дней"}</Text>
           <Feather name="chevron-right" size={16} color={colors.textMuted} />
@@ -34,7 +39,7 @@ export default function PhaseBar({ streak, onPress }: { streak: number; onPress:
 
       <View style={styles.track}>
         <View style={styles.trackLine} />
-        <View style={[styles.fill, { width: `${pct}%` }]} />
+        <View style={[styles.fill, { width: `${pct}%`, backgroundColor: tint }]} />
         {PHASE_MARKS.map((day) => {
           const reached = streak >= day;
           return (
@@ -42,7 +47,11 @@ export default function PhaseBar({ streak, onPress }: { streak: number; onPress:
               key={day}
               // Pulled back by half its own width so the dot sits *on* the day, not after
               // it — at the far end that keeps 66 inside the track instead of hanging off.
-              style={[styles.mark, { left: `${(day / AUTOPILOT_DAY) * 100}%` }, reached && styles.markReached]}
+              style={[
+                styles.mark,
+                { left: `${(day / AUTOPILOT_DAY) * 100}%` },
+                reached && { borderColor: tint, backgroundColor: tint },
+              ]}
             />
           );
         })}
@@ -64,6 +73,8 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.card,
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "transparent",
     paddingHorizontal: 16,
     paddingVertical: 14,
     marginTop: 10,
@@ -94,7 +105,6 @@ const styles = StyleSheet.create({
     top: (MARK_SIZE - 6) / 2,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.accentGreen,
   },
   mark: {
     position: "absolute",
@@ -107,7 +117,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.cardBorder,
   },
-  markReached: { borderColor: colors.accentGreen, backgroundColor: colors.accentGreen },
   row: { flexDirection: "row", justifyContent: "space-between", marginTop: 10 },
   subtleSmall: { color: colors.textMuted, fontSize: 11 },
 });

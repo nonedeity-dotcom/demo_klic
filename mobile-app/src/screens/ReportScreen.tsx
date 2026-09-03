@@ -105,7 +105,7 @@ export default function ReportScreen({ navigation }: { navigation: { navigate: (
           subject as the number above it, and it is not what the screen is
           opened for. */}
       <StreakRing streak={streak} hasHistory={hasHistory}>
-        <HistoryCalendar today={today} habits={habits} />
+        {(tint) => <HistoryCalendar today={today} habits={habits} accent={tint} />}
       </StreakRing>
 
       {/* The whole road with its stretches marked. Shown at every streak length: the ring

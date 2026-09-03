@@ -32,7 +32,20 @@ const WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
  * the run you are actually in the middle of — a chain crossing the 1st looks
  * broken in a month view even though it isn't.
  */
-export default function HistoryCalendar({ today, habits }: { today: string; habits: Habit[] }) {
+export default function HistoryCalendar({
+  today,
+  habits,
+  accent,
+}: {
+  today: string;
+  habits: Habit[];
+  /**
+   * Colour for the fold-out toggle only — it lives inside the streak card and follows its
+   * stretch. The day cells keep green deliberately: "done" means the same thing in every
+   * stretch, and recolouring it would turn a fact into decoration.
+   */
+  accent?: string;
+}) {
   const qc = useQueryClient();
   const [visibleMonth, setVisibleMonth] = useState(() => monthKey(today));
 
@@ -91,8 +104,8 @@ export default function HistoryCalendar({ today, habits }: { today: string; habi
         accessibilityLabel="Календарь привычек"
         style={({ pressed }) => [styles.header, pressed && styles.dimmed]}
       >
-        <Text style={styles.headerText}>Календарь</Text>
-        <Feather name={prefs.open ? "chevron-up" : "chevron-down"} size={16} color={colors.textMuted} />
+        <Text style={[styles.headerText, accent ? { color: accent } : null]}>Календарь</Text>
+        <Feather name={prefs.open ? "chevron-up" : "chevron-down"} size={16} color={accent ?? colors.textMuted} />
       </Pressable>
 
       {prefs.open && (
