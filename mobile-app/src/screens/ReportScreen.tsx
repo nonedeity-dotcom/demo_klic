@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, STREAK_MILESTONES } from "../api/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, DEFAULT_REPORT_PREFS, STREAK_MILESTONES, type ReportPrefs } from "../api/client";
 import { colors } from "../theme/colors";
 import { dateNDaysAgo } from "../lib/date";
 import { plural } from "../lib/plural";
@@ -76,6 +76,15 @@ export default function ReportScreen({
   // Also where the weekly freeze is granted — see useStreak.
   const { streak, freezes } = useStreak(today);
   // "Потом" has nothing to report until it has been done at least once.
+  const { data: reportPrefs = DEFAULT_REPORT_PREFS } = useQuery<ReportPrefs>({
+    queryKey: ["reportPrefs"],
+    queryFn: () => api.getReportPrefs(),
+  });
+  const saveReportPrefs = useMutation({
+    mutationFn: (next: ReportPrefs) => api.setReportPrefs(next),
+    onSuccess: (applied) => qc.setQueryData(["reportPrefs"], applied),
+  });
+
   const reportable = habits.filter((h) => habitGroup(h) !== "later" || streakLogs.some((l) => l.habitId === h.id && l.done));
   const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) ?? null;
   const [justCelebrated, setJustCelebrated] = useState<number | null>(null);
@@ -128,8 +137,27 @@ export default function ReportScreen({
           system hold today", so a habit added a week in inherits the whole streak. */}
       {reportable.length > 0 && (
         <>
-          <Text style={styles.sectionLabel}>По привычкам</Text>
-          {reportable.map((h) => {
+          {/* Folds away like the calendar does: with eight habits the list is most of the
+              screen, and the ring above it is what the report opens for. */}
+          <Pressable
+            onPress={() => saveReportPrefs.mutate({ ...reportPrefs, habitsOpen: !reportPrefs.habitsOpen })}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: reportPrefs.habitsOpen }}
+            accessibilityLabel="По привычкам"
+            style={({ pressed }) => [styles.sectionHeader, pressed && styles.pressedRow]}
+          >
+            <Text style={styles.sectionLabel}>По привычкам</Text>
+            <View style={styles.sectionHeaderRight}>
+              {!reportPrefs.habitsOpen && <Text style={styles.subtleSmall}>{reportable.length}</Text>}
+              <Feather
+                name={reportPrefs.habitsOpen ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={colors.textMuted}
+              />
+            </View>
+          </Pressable>
+          {reportPrefs.habitsOpen &&
+            reportable.map((h) => {
             const stats = habitStats(h, streakLogs, today, freezes);
             return (
               <Pressable
@@ -159,8 +187,8 @@ export default function ReportScreen({
                 </View>
                 <Feather name="chevron-right" size={16} color={colors.textMuted} />
               </Pressable>
-            );
-          })}
+              );
+            })}
         </>
       )}
 
@@ -259,6 +287,8 @@ const styles = StyleSheet.create({
   reviewHint: { color: colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 3 },
   reviewChevron: { color: colors.textMuted, fontSize: 20 },
 
+  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionHeaderRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   habitRow: {
     flexDirection: "row",
     alignItems: "center",

@@ -33,6 +33,7 @@ const KEYS = {
   reviews: "weekly-reviews-v1",
   tasks: "tasks-v1",
   calendarPrefs: "calendar-prefs-v1",
+  reportPrefs: "report-prefs-v1",
   freezes: "streak-freezes-v1",
 };
 
@@ -44,6 +45,18 @@ export interface CalendarPrefs {
 
 /** Folded away by default — the calendar is not what you open the app for. */
 export const DEFAULT_CALENDAR_PREFS: CalendarPrefs = { open: false, mode: "month" };
+
+export interface ReportPrefs {
+  /** Whether the per-habit list on the report is unfolded. */
+  habitsOpen: boolean;
+}
+
+/**
+ * Open by default, unlike the calendar: the per-habit list is the answer to "how long has
+ * each of these been going", which is a question you have while looking at the report, not
+ * one you go digging for. Folding it is for when the list gets long.
+ */
+export const DEFAULT_REPORT_PREFS: ReportPrefs = { habitsOpen: true };
 
 export interface FocusIntervals {
   workMin: number;
@@ -499,6 +512,15 @@ export const api = {
       await write(KEYS.rewards, [...rewards, reward]);
       return reward;
     });
+  },
+
+  async getReportPrefs(): Promise<ReportPrefs> {
+    const stored = await read<Partial<ReportPrefs>>(KEYS.reportPrefs, {});
+    return { habitsOpen: stored.habitsOpen !== false };
+  },
+  async setReportPrefs(prefs: ReportPrefs): Promise<ReportPrefs> {
+    await write(KEYS.reportPrefs, prefs);
+    return prefs;
   },
 
   async getCalendarPrefs(): Promise<CalendarPrefs> {
