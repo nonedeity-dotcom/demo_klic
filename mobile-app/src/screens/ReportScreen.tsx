@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, DEFAULT_REPORT_PREFS, STREAK_MILESTONES, type ReportPrefs } from "../api/client";
+import { api, STREAK_MILESTONES } from "../api/client";
 import { colors } from "../theme/colors";
 import { dateNDaysAgo } from "../lib/date";
 import { plural } from "../lib/plural";
@@ -9,6 +9,7 @@ import { Feather } from "@expo/vector-icons";
 import { habitStats } from "../lib/habitStats";
 import { habitGroup } from "../lib/habits";
 import { STREAK_WINDOW_DAYS } from "../lib/streak";
+import { useFold } from "../lib/useFold";
 import { useStreak } from "../lib/useStreak";
 import { useTodayKey } from "../lib/useTodayKey";
 import { weekKey, dayOfWeek } from "../lib/week";
@@ -75,28 +76,19 @@ export default function ReportScreen({
 
   // Also where the weekly freeze is granted — see useStreak.
   const { streak, freezes } = useStreak(today);
-  // "Потом" has nothing to report until it has been done at least once.
-  const { data: reportPrefs = DEFAULT_REPORT_PREFS } = useQuery<ReportPrefs>({
-    queryKey: ["reportPrefs"],
-    queryFn: () => api.getReportPrefs(),
-  });
-  const saveReportPrefs = useMutation({
-    mutationFn: (next: ReportPrefs) => api.setReportPrefs(next),
-    onSuccess: (applied) => qc.setQueryData(["reportPrefs"], applied),
-  });
+  // Folded on arrival, every time: the report is one number, and a list left permanently
+  // unfolded buried it. See useFold.
+  const habitsFold = useFold();
 
-  // What this list is for is "how is each of the things I'm actually doing going" — so
-  // "Потом" never appears (a plan has nothing to report) and "Дополнительно" appears only
-  // once it has actually been ticked. Archived habits are already gone: getHabits drops
-  // them, and their reports live in the archive instead.
-  const wasEverDone = (h: Habit) => streakLogs.some((l) => l.habitId === h.id && l.done);
+  // Everything you are actually doing, in the two piles you sorted it into. "Потом" is the
+  // only one left out: it is a plan, and a plan has nothing to report. Archived habits are
+  // already gone — getHabits drops them, and their reports live in the archive instead.
+  //
+  // "Дополнительно" used to appear only once a habit there had been ticked, which meant a
+  // habit you had just added was missing from the one screen you would go to look for it.
   const reportGroups: { id: ItemGroup; title: string; habits: Habit[] }[] = [
     { id: "now", title: "Ввожу сейчас", habits: habits.filter((h) => habitGroup(h) === "now") },
-    {
-      id: "extra",
-      title: "Дополнительно",
-      habits: habits.filter((h) => habitGroup(h) === "extra" && wasEverDone(h)),
-    },
+    { id: "extra", title: "Дополнительно", habits: habits.filter((h) => habitGroup(h) === "extra") },
   ];
   const reportable = reportGroups.flatMap((g) => g.habits);
   const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) ?? null;
@@ -153,23 +145,23 @@ export default function ReportScreen({
           {/* Folds away like the calendar does: with eight habits the list is most of the
               screen, and the ring above it is what the report opens for. */}
           <Pressable
-            onPress={() => saveReportPrefs.mutate({ ...reportPrefs, habitsOpen: !reportPrefs.habitsOpen })}
+            onPress={habitsFold.toggle}
             accessibilityRole="button"
-            accessibilityState={{ expanded: reportPrefs.habitsOpen }}
+            accessibilityState={{ expanded: habitsFold.open }}
             accessibilityLabel="По привычкам"
             style={({ pressed }) => [styles.sectionHeader, pressed && styles.pressedRow]}
           >
             <Text style={styles.sectionLabel}>По привычкам</Text>
             <View style={styles.sectionHeaderRight}>
-              {!reportPrefs.habitsOpen && <Text style={styles.subtleSmall}>{reportable.length}</Text>}
+              {!habitsFold.open && <Text style={styles.subtleSmall}>{reportable.length}</Text>}
               <Feather
-                name={reportPrefs.habitsOpen ? "chevron-up" : "chevron-down"}
+                name={habitsFold.open ? "chevron-up" : "chevron-down"}
                 size={16}
                 color={colors.textMuted}
               />
             </View>
           </Pressable>
-          {reportPrefs.habitsOpen &&
+          {habitsFold.open &&
             reportGroups.map((group) =>
               group.habits.length === 0 ? null : (
                 <View key={group.id}>

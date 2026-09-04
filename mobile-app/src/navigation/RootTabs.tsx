@@ -1,7 +1,7 @@
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { Pressable } from "react-native";
+import { Pressable, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 
@@ -14,6 +14,7 @@ import ReminderScreen from "../screens/ReminderScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import LibraryScreen from "../screens/LibraryScreen";
 import ArchiveScreen from "../screens/ArchiveScreen";
+import HeaderRefresh from "../components/HeaderRefresh";
 import PhasesScreen from "../screens/PhasesScreen";
 import HabitReportScreen from "../screens/HabitReportScreen";
 import ReviewScreen from "../screens/ReviewScreen";
@@ -88,15 +89,20 @@ export default function RootTabs() {
             // row would just eat height on a 640px screen.
             headerTitle: "",
             headerRight: () => (
-              <Pressable
-                onPress={() => navigation.navigate("Settings")}
-                accessibilityRole="button"
-                accessibilityLabel="Настройки"
-                hitSlop={12}
-                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-              >
-                <Feather name="settings" size={20} color={colors.textMuted} />
-              </Pressable>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                {/* Only on the tabs, not on the pushed screens: nothing behind the gear
+                    reads anything that another app can change under it. */}
+                <HeaderRefresh />
+                <Pressable
+                  onPress={() => navigation.navigate("Settings")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Настройки"
+                  hitSlop={12}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                >
+                  <Feather name="settings" size={20} color={colors.textMuted} />
+                </Pressable>
+              </View>
             ),
           })}
         />

@@ -22,6 +22,7 @@ import {
 } from "../lib/calendar";
 import type { Habit, HabitLog } from "../types";
 import { useState } from "react";
+import { useFold } from "../lib/useFold";
 
 const WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 
@@ -65,6 +66,9 @@ export default function HistoryCalendar({
 }) {
   const qc = useQueryClient();
   const [visibleMonth, setVisibleMonth] = useState(() => monthKey(today));
+  // Not stored: unfolding the calendar lasts until you leave the screen. Only which of the
+  // two views you like is a preference worth keeping.
+  const { open, toggle: toggleOpen } = useFold();
 
   const { data: prefs = DEFAULT_CALENDAR_PREFS } = useQuery<CalendarPrefs>({
     queryKey: ["calendarPrefs"],
@@ -91,7 +95,7 @@ export default function HistoryCalendar({
   const { data: logs = [] } = useQuery<HabitLog[]>({
     queryKey: ["habitLog", "calendar", range, rangeTo],
     queryFn: () => api.getHabitLog(range, rangeTo) as Promise<HabitLog[]>,
-    enabled: prefs.open || alwaysOpen,
+    enabled: open || alwaysOpen,
   });
 
   const frozenDays = new Set(frozen);
@@ -110,7 +114,6 @@ export default function HistoryCalendar({
   const canGoBack = earliest !== null && shiftMonth(visibleMonth, -1) >= monthKey(earliest);
   const canGoForward = visibleMonth < currentMonth;
 
-  const toggleOpen = () => savePrefs.mutate({ ...prefs, open: !prefs.open });
   const setMode = (mode: CalendarPrefs["mode"]) => {
     setVisibleMonth(currentMonth);
     savePrefs.mutate({ ...prefs, mode });
@@ -122,16 +125,16 @@ export default function HistoryCalendar({
         <Pressable
           onPress={toggleOpen}
           accessibilityRole="button"
-          accessibilityState={{ expanded: prefs.open }}
+          accessibilityState={{ expanded: open }}
           accessibilityLabel="Календарь привычек"
           style={({ pressed }) => [styles.header, pressed && styles.dimmed]}
         >
           <Text style={[styles.headerText, accent ? { color: accent } : null]}>Календарь</Text>
-          <Feather name={prefs.open ? "chevron-up" : "chevron-down"} size={16} color={accent ?? colors.textMuted} />
+          <Feather name={open ? "chevron-up" : "chevron-down"} size={16} color={accent ?? colors.textMuted} />
         </Pressable>
       )}
 
-      {(prefs.open || alwaysOpen) && (
+      {(open || alwaysOpen) && (
         <>
           <View style={styles.modeRow}>
             {([

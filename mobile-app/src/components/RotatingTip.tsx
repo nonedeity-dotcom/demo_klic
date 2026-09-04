@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { useFold } from "../lib/useFold";
 import { useRotatingTip } from "../lib/useRotatingTip";
 import { colors } from "../theme/colors";
 import TipCard from "./TipCard";
@@ -13,7 +13,9 @@ import TipCard from "./TipCard";
  */
 export default function RotatingTip() {
   const rotating = useRotatingTip();
-  const [expanded, setExpanded] = useState(false);
+  // Collapsed again whenever you leave the screen — an opened tip is something you read
+  // once, not a card you want permanently unfolded above the number.
+  const { open, toggle } = useFold();
 
   if (!rotating) return null;
 
@@ -25,8 +27,8 @@ export default function RotatingTip() {
       <TipCard
         tip={rotating.tip}
         number={rotating.number}
-        expanded={expanded}
-        onToggle={() => setExpanded((v) => !v)}
+        expanded={open}
+        onToggle={toggle}
       />
     </View>
   );
