@@ -9,6 +9,7 @@ import ChecklistScreen from "../screens/ChecklistScreen";
 import FocusScreen from "../screens/FocusScreen";
 import EnergyScreen from "../screens/EnergyScreen";
 import ReportScreen from "../screens/ReportScreen";
+import StatsScreen from "../screens/StatsScreen";
 import ReminderScreen from "../screens/ReminderScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import LibraryScreen from "../screens/LibraryScreen";
@@ -42,9 +43,9 @@ function Tabs() {
         tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.cardBorder },
-        // Four tabs — ~80px each on a 320px screen, so the labels have room they never had
-        // when there were seven.
-        tabBarLabelStyle: { fontSize: 12 },
+        // Five tabs — ~64px each on a 320px screen. "Статистика" is the longest label the
+        // bar has ever carried, so it sets the size rather than the count.
+        tabBarLabelStyle: { fontSize: 10 },
         tabBarItemStyle: { paddingHorizontal: 0 },
       }}
     >
@@ -56,6 +57,9 @@ function Tabs() {
       <Tab.Screen name="Чек-лист" component={ChecklistScreen} options={{ tabBarIcon: icon("check-square") }} />
       <Tab.Screen name="Фокус" component={FocusScreen} options={{ tabBarIcon: icon("target") }} />
       <Tab.Screen name="Энергия" component={EnergyScreen} options={{ tabBarIcon: icon("activity") }} />
+      {/* Last, and deliberately so: the long view is for looking back, not for the thing you
+          open the app to do. */}
+      <Tab.Screen name="Статистика" component={StatsScreen} options={{ tabBarIcon: icon("trending-up") }} />
     </Tab.Navigator>
   );
 }

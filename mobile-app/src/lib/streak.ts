@@ -23,10 +23,39 @@ export const STREAK_WINDOW_DAYS = 120;
 export function dayCounts(habits: Habit[], logs: HabitLog[], date: string): boolean {
   const deciding = habitsThatDecideTheDay(habits);
   if (deciding.length === 0) return false;
-  return deciding.every((h) => {
-    const log = logs.find((l) => l.habitId === h.id && l.date === date);
-    return logCount(log) >= perDayTarget(h);
-  });
+  const counts = new Map<string, number>();
+  for (const l of logs) if (l.date === date) counts.set(l.habitId, logCount(l));
+  return meetsDay(deciding, counts);
+}
+
+/** The rule itself, so the single-day and whole-history callers cannot drift apart. */
+function meetsDay(deciding: Habit[], counts: Map<string, number>): boolean {
+  return deciding.every((h) => (counts.get(h.id) ?? 0) >= perDayTarget(h));
+}
+
+/**
+ * Every date that counted, in one pass.
+ *
+ * The statistics screen asks about a year at a time; calling dayCounts per day would
+ * re-scan the whole log for each one. Same verdict, one walk.
+ */
+export function countedDates(habits: Habit[], logs: HabitLog[]): Set<string> {
+  const deciding = habitsThatDecideTheDay(habits);
+  const counted = new Set<string>();
+  if (deciding.length === 0) return counted;
+
+  const byDate = new Map<string, Map<string, number>>();
+  for (const l of logs) {
+    let day = byDate.get(l.date);
+    if (!day) {
+      day = new Map();
+      byDate.set(l.date, day);
+    }
+    // Two rows for one habit on one day shouldn't halve its count.
+    day.set(l.habitId, Math.max(day.get(l.habitId) ?? 0, logCount(l)));
+  }
+  for (const [date, counts] of byDate) if (meetsDay(deciding, counts)) counted.add(date);
+  return counted;
 }
 
 /**
