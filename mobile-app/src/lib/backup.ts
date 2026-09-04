@@ -196,6 +196,9 @@ function parseData(raw: unknown): BackupData {
   // clamps again on write, so a garbage pair can't reach the timer either way.
   const fi = isObj(d.focusIntervals) ? d.focusIntervals : {};
   const focusIntervals: FocusIntervals = {
+    // Missing from every backup written before the boredom phase existed.
+    boredomMin:
+      isNum(fi.boredomMin) && fi.boredomMin > 0 ? Math.round(fi.boredomMin) : DEFAULT_FOCUS_INTERVALS.boredomMin,
     workMin: isNum(fi.workMin) && fi.workMin > 0 ? Math.round(fi.workMin) : DEFAULT_FOCUS_INTERVALS.workMin,
     breakMin: isNum(fi.breakMin) && fi.breakMin > 0 ? Math.round(fi.breakMin) : DEFAULT_FOCUS_INTERVALS.breakMin,
   };

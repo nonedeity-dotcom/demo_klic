@@ -48,12 +48,17 @@ export interface CalendarPrefs {
 export const DEFAULT_CALENDAR_PREFS: CalendarPrefs = { mode: "month" };
 
 export interface FocusIntervals {
+  /** The wind-down before work — the source's "10-20 минут скуки". */
+  boredomMin: number;
   workMin: number;
   breakMin: number;
 }
 
-/** 50/10 as the starting point — the ratio the app's source material uses. */
-export const DEFAULT_FOCUS_INTERVALS: FocusIntervals = { workMin: 50, breakMin: 10 };
+/**
+ * 50/10 as the starting point — the ratio the app's source material uses — and 15 minutes
+ * of boredom, the middle of the range it gives.
+ */
+export const DEFAULT_FOCUS_INTERVALS: FocusIntervals = { boredomMin: 15, workMin: 50, breakMin: 10 };
 
 export const DEFAULT_SCREEN_TIME_LIMIT_MIN = 180; // 3h/day, matches no particular study — just a sane starting point
 
@@ -589,12 +594,16 @@ export const api = {
     // Clamped on read as well as on write: a hand-edited or half-written
     // backup shouldn't be able to produce a timer that never ends.
     return {
+      // Absent in anything saved before the boredom phase existed, so it falls back to the
+      // default rather than to zero.
+      boredomMin: clampMinutes(stored.boredomMin, DEFAULT_FOCUS_INTERVALS.boredomMin),
       workMin: clampMinutes(stored.workMin, DEFAULT_FOCUS_INTERVALS.workMin),
       breakMin: clampMinutes(stored.breakMin, DEFAULT_FOCUS_INTERVALS.breakMin),
     };
   },
   async setFocusIntervals(intervals: FocusIntervals): Promise<FocusIntervals> {
     const safe: FocusIntervals = {
+      boredomMin: clampMinutes(intervals.boredomMin, DEFAULT_FOCUS_INTERVALS.boredomMin),
       workMin: clampMinutes(intervals.workMin, DEFAULT_FOCUS_INTERVALS.workMin),
       breakMin: clampMinutes(intervals.breakMin, DEFAULT_FOCUS_INTERVALS.breakMin),
     };

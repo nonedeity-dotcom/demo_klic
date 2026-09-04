@@ -31,6 +31,12 @@
           "icon": "./assets/notification-icon.png",
           "color": "#e08a55"
         }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": false
+        }
       ]
     ]
   }

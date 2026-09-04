@@ -8,6 +8,27 @@ import { colors } from "../theme/colors";
 import TipCard from "../components/TipCard";
 import { TIPS, rotationNumber } from "../content/library";
 import { todayKey } from "../lib/date";
+import { useFold } from "../lib/useFold";
+import {
+  FOCUS_PHASES,
+  PHASE_CAPTIONS,
+  PHASE_FIELDS,
+  PHASE_LABELS,
+  countsAsSession,
+  nextPhase,
+  phaseMinutes,
+  type FocusPhase,
+} from "../lib/focusPhases";
+import {
+  cancelChime,
+  clearPhaseSound,
+  getFocusSounds,
+  pickPhaseSound,
+  playPhaseChime,
+  scheduleChime,
+  stopChime,
+  type FocusSounds,
+} from "../notifications/chime";
 import type { RewardOption } from "../types";
 
 const SIZE = 220;
@@ -16,8 +37,9 @@ const RADIUS = (SIZE - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
 
 // The ratios the source material and its usual variants use. Anything else is
-// still reachable with the steppers.
-const PRESETS: FocusIntervals[] = [
+// still reachable with the steppers. Boredom is not part of a preset: it is a fixed
+// wind-down, not a ratio, and a preset that quietly retuned it would be a surprise.
+const PRESETS: { workMin: number; breakMin: number }[] = [
   { workMin: 25, breakMin: 5 },
   { workMin: 50, breakMin: 10 },
   { workMin: 60, breakMin: 20 },
@@ -32,7 +54,9 @@ const SOUND_TIP = TIPS.find((t) => t.id === "focus-sound")!;
 
 export default function FocusScreen() {
   const qc = useQueryClient();
-  const [mode, setMode] = useState<"work" | "break">("work");
+  // "work" rather than "boredom" on open: the wind-down is something you choose to do
+  // before a session, and defaulting to it would make the first tap start the wrong clock.
+  const [phase, setPhase] = useState<FocusPhase>("work");
   // The lengths are a saved setting now, not constants. Until the stored value
   // arrives the defaults stand in, and the idle timer is re-seeded from it —
   // see the effect below.
@@ -45,6 +69,22 @@ export default function FocusScreen() {
 
   const [editing, setEditing] = useState(false);
   const [soundTipOpen, setSoundTipOpen] = useState(false);
+  const soundsFold = useFold();
+  const [sounds, setSounds] = useState<FocusSounds>({});
+  const [picking, setPicking] = useState<FocusPhase | null>(null);
+  const [soundError, setSoundError] = useState<string | null>(null);
+  /**
+   * Whether the backup notification is actually armed for the phase now running.
+   *
+   * null while nothing runs. The screen says which of the two mechanisms is behind the
+   * current session, because "it will ring with the phone away" and "it will ring only if
+   * you are looking at it" are different promises.
+   */
+  const [alarmArmed, setAlarmArmed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    getFocusSounds().then(setSounds);
+  }, []);
   const [draft, setDraft] = useState<FocusIntervals>(DEFAULT_FOCUS_INTERVALS);
 
   const [secondsLeft, setSecondsLeft] = useState(DEFAULT_FOCUS_INTERVALS.workMin * 60);
@@ -110,8 +150,8 @@ export default function FocusScreen() {
   // would either cut it short or extend it without asking.
   useEffect(() => {
     if (running || startedRef.current) return;
-    setSecondsLeft((mode === "work" ? workMin : breakMin) * 60);
-  }, [workMin, breakMin, mode, running]);
+    setSecondsLeft(phaseMinutes(intervals, phase) * 60);
+  }, [intervals, phase, running]);
 
   // Guards against the phase flipping twice: the old code called this from
   // inside a setSecondsLeft updater, and React may run an updater more than
@@ -125,20 +165,24 @@ export default function FocusScreen() {
     deadlineRef.current = null;
     setRunning(false);
     startedRef.current = false;
-    if (mode === "work") {
-      logSession.mutate(workMin);
-      setMode("break");
-      setSecondsLeft(breakMin * 60);
+    setAlarmArmed(null);
+    // We got here with the app open, so the notification armed for this deadline would only
+    // be a duplicate of the chime about to play.
+    void cancelChime();
+    void playPhaseChime(phase);
+
+    const next = nextPhase(phase);
+    if (countsAsSession(phase)) {
+      logSession.mutate(phaseMinutes(intervals, phase));
       setShowReward(true); // offline-progress step: pick a reward before the break starts
-    } else {
-      setMode("work");
-      setSecondsLeft(workMin * 60);
     }
+    setPhase(next);
+    setSecondsLeft(phaseMinutes(intervals, next) * 60);
     // Released on the next tick, once the state updates above are queued.
     setTimeout(() => {
       endingRef.current = false;
     }, 0);
-  }, [mode, workMin, breakMin, logSession]);
+  }, [phase, intervals, logSession]);
 
   // Read through a ref so the ticking effect below depends only on `running`.
   // Depending on the callback itself would tear down and rebuild the interval
@@ -185,7 +229,7 @@ export default function FocusScreen() {
     setShowReward(false);
   }
 
-  const totalSecs = mode === "work" ? workMin * 60 : breakMin * 60;
+  const totalSecs = phaseMinutes(intervals, phase) * 60;
   const pct = 1 - secondsLeft / totalSecs;
   const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
   const ss = String(secondsLeft % 60).padStart(2, "0");
@@ -197,11 +241,18 @@ export default function FocusScreen() {
       if (deadline != null) setSecondsLeft(Math.max(0, Math.round((deadline - Date.now()) / 1000)));
       deadlineRef.current = null;
       setRunning(false);
+      setAlarmArmed(null);
+      // Otherwise a paused timer still goes off at the original deadline.
+      void cancelChime();
     } else {
       if (secondsLeft <= 0) return;
-      deadlineRef.current = Date.now() + secondsLeft * 1000;
+      const deadline = Date.now() + secondsLeft * 1000;
+      deadlineRef.current = deadline;
       startedRef.current = true;
       setRunning(true);
+      void stopChime();
+      // Armed here rather than at the end, because at the end this app may not be running.
+      scheduleChime(phase, deadline).then(setAlarmArmed);
     }
   };
 
@@ -209,11 +260,50 @@ export default function FocusScreen() {
     deadlineRef.current = null;
     setRunning(false);
     startedRef.current = false;
-    setMode("work");
-    setSecondsLeft(workMin * 60);
+    setAlarmArmed(null);
+    void cancelChime();
+    void stopChime();
+    setPhase("work");
+    setSecondsLeft(phaseMinutes(intervals, "work") * 60);
     // A reward prompt left open from the session that just ended shouldn't
     // survive an explicit reset.
     setShowReward(false);
+  };
+
+  /**
+   * Switching to another phase by hand. Whatever was running is dropped: three phases with
+   * one clock means picking a different one is starting over, and silently keeping the old
+   * countdown under a new label would be worse than either.
+   */
+  const selectPhase = (next: FocusPhase) => {
+    if (next === phase && !startedRef.current) return;
+    deadlineRef.current = null;
+    setRunning(false);
+    startedRef.current = false;
+    setAlarmArmed(null);
+    void cancelChime();
+    void stopChime();
+    setPhase(next);
+    setSecondsLeft(phaseMinutes(intervals, next) * 60);
+  };
+
+  const choosePhaseSound = async (target: FocusPhase) => {
+    setPicking(target);
+    setSoundError(null);
+    const res = await pickPhaseSound(target);
+    if (res.status === "picked") setSounds((prev) => ({ ...prev, [target]: res.sound }));
+    else if (res.status === "unplayable")
+      setSoundError("Этот файл не удалось открыть. Попробуй другой — mp3, m4a, wav или ogg.");
+    setPicking(null);
+  };
+
+  const resetPhaseSound = async (target: FocusPhase) => {
+    await clearPhaseSound(target);
+    setSounds((prev) => {
+      const next = { ...prev };
+      delete next[target];
+      return next;
+    });
   };
 
   const openEditor = () => {
@@ -222,7 +312,8 @@ export default function FocusScreen() {
   };
   const bumpDraft = (field: keyof FocusIntervals, delta: number) =>
     setDraft((d) => ({ ...d, [field]: Math.min(240, Math.max(1, d[field] + delta)) }));
-  const draftUnchanged = draft.workMin === workMin && draft.breakMin === breakMin;
+  const draftUnchanged =
+    draft.workMin === workMin && draft.breakMin === breakMin && draft.boredomMin === intervals.boredomMin;
 
   return (
     <ScrollView
@@ -230,8 +321,34 @@ export default function FocusScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.subtle}>{mode === "work" ? "Погружение" : "Офлайн-прогресс"}</Text>
-      <View style={{ height: 24 }} />
+      <Text style={styles.subtle}>{PHASE_CAPTIONS[phase]}</Text>
+
+      {/* Three clocks, one ring. The row is the only way to reach boredom deliberately —
+          the automatic hand-over never goes back to it. */}
+      <View style={styles.phaseRow}>
+        {FOCUS_PHASES.map((p) => {
+          const active = p === phase;
+          return (
+            <Pressable
+              key={p}
+              onPress={() => selectPhase(p)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={`Фаза: ${PHASE_LABELS[p]}`}
+              style={({ pressed }) => [styles.phaseChip, active && styles.phaseChipActive, pressed && styles.dimmed]}
+            >
+              <Text style={[styles.phaseChipText, active && styles.phaseChipTextActive]}>
+                {PHASE_LABELS[p]}
+              </Text>
+              <Text style={[styles.phaseChipMin, active && styles.phaseChipMinActive]}>
+                {phaseMinutes(intervals, p)} мин
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={{ height: 20 }} />
       <View style={{ width: SIZE, height: SIZE }}>
         <Svg width={SIZE} height={SIZE} style={{ transform: [{ rotate: "-90deg" }] }}>
           <Circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} stroke={colors.cardBorder} strokeWidth={STROKE} fill="none" />
@@ -252,7 +369,7 @@ export default function FocusScreen() {
             <Text style={styles.timerText}>
               {mm}:{ss}
             </Text>
-            <Text style={styles.timerLabel}>{mode === "work" ? "работа" : "перерыв"}</Text>
+            <Text style={styles.timerLabel}>{PHASE_LABELS[phase]}</Text>
           </View>
         </View>
       </View>
@@ -268,7 +385,23 @@ export default function FocusScreen() {
         </Pressable>
       </View>
 
-      <Text style={styles.footnote}>Во время перерыва — без телефона: прогулка, чай, свежий воздух.</Text>
+      {/* The OS's answer, not ours: a timer you trust enough to walk away from has to say
+          whether it can actually reach you. */}
+      {running && (
+        <Text style={styles.footnote}>
+          {alarmArmed === false
+            ? "Прозвенит только пока приложение открыто — уведомления запрещены."
+            : "Прозвенит и с закрытым приложением."}
+        </Text>
+      )}
+
+      <Text style={styles.footnote}>
+        {phase === "boredom"
+          ? "Ничего не делай: без телефона, без музыки, без ленты. В этом весь смысл отрезка."
+          : phase === "work"
+            ? "Телефон — экраном вниз и подальше. Сигнал прозвенит сам."
+            : "Во время перерыва — без телефона: прогулка, чай, свежий воздух."}
+      </Text>
 
       {/* The lengths used to be constants in this file. Editing is folded away
           by default so the screen stays a timer rather than a settings page. */}
@@ -276,11 +409,11 @@ export default function FocusScreen() {
         <Pressable
           onPress={openEditor}
           accessibilityRole="button"
-          accessibilityLabel="Изменить длительность работы и перерыва"
+          accessibilityLabel="Изменить длительность отрезков"
           style={({ pressed }) => [styles.intervalSummary, pressed && styles.dimmed]}
         >
           <Text style={styles.intervalSummaryText}>
-            {workMin} мин работы · {breakMin} мин перерыва
+            {intervals.boredomMin} · {workMin} · {breakMin} мин — скука, работа, перерыв
           </Text>
           <Feather name="edit-2" size={14} color={colors.textMuted} />
         </Pressable>
@@ -294,7 +427,7 @@ export default function FocusScreen() {
               return (
                 <Pressable
                   key={`${p.workMin}-${p.breakMin}`}
-                  onPress={() => setDraft(p)}
+                  onPress={() => setDraft((d) => ({ ...d, ...p }))}
                   accessibilityRole="button"
                   style={({ pressed }) => [styles.preset, active && styles.presetActive, pressed && styles.dimmed]}
                 >
@@ -307,6 +440,7 @@ export default function FocusScreen() {
           </View>
 
           {([
+            ["boredomMin", "Скука", 5],
             ["workMin", "Работа", 5],
             ["breakMin", "Перерыв", 5],
           ] as const).map(([field, label, step]) => (
@@ -357,6 +491,79 @@ export default function FocusScreen() {
               <Text style={styles.editorSaveText}>Сохранить</Text>
             </Pressable>
           </View>
+        </View>
+      )}
+
+      {/* Folded away like the durations: this is a settings block on a screen that is
+          otherwise a clock. */}
+      <Pressable
+        onPress={soundsFold.toggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: soundsFold.open }}
+        accessibilityLabel="Звук сигнала"
+        style={({ pressed }) => [styles.intervalSummary, pressed && styles.dimmed]}
+      >
+        <Text style={styles.intervalSummaryText}>Звук сигнала</Text>
+        <Feather name={soundsFold.open ? "chevron-up" : "chevron-down"} size={14} color={colors.textMuted} />
+      </Pressable>
+
+      {soundsFold.open && (
+        <View style={styles.editorCard}>
+          {FOCUS_PHASES.map((p) => {
+            const chosen = sounds[p];
+            return (
+              <View key={p} style={styles.soundRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.editorRowLabel}>
+                    {PHASE_LABELS[p][0].toUpperCase()}
+                    {PHASE_LABELS[p].slice(1)}
+                  </Text>
+                  <Text style={styles.soundName} numberOfLines={1}>
+                    {picking === p ? "выбираешь…" : chosen ? chosen.name : "только вибрация"}
+                  </Text>
+                </View>
+                {chosen && (
+                  <Pressable
+                    onPress={() => void playPhaseChime(p)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Прослушать: ${PHASE_LABELS[p]}`}
+                    style={({ pressed }) => [styles.smallBtn, pressed && styles.dimmed]}
+                  >
+                    <Feather name="play" size={13} color={colors.textMuted} />
+                  </Pressable>
+                )}
+                <Pressable
+                  onPress={() => void choosePhaseSound(p)}
+                  disabled={picking !== null}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Выбрать звук: ${PHASE_LABELS[p]}`}
+                  style={({ pressed }) => [styles.smallBtn, pressed && styles.dimmed]}
+                >
+                  <Feather name="folder" size={13} color={colors.textMuted} />
+                </Pressable>
+                {chosen && (
+                  <Pressable
+                    onPress={() => void resetPhaseSound(p)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Убрать звук: ${PHASE_LABELS[p]}`}
+                    style={({ pressed }) => [styles.smallBtn, pressed && styles.dimmed]}
+                  >
+                    <Feather name="x" size={13} color={colors.textMuted} />
+                  </Pressable>
+                )}
+              </View>
+            );
+          })}
+
+          {soundError && <Text style={styles.soundError}>{soundError}</Text>}
+
+          {/* Said plainly rather than discovered later: the file you pick is played by this
+              app, and only this app can play it. */}
+          <Text style={styles.editorNote}>
+            Свой файл звучит, пока приложение открыто. Если телефон заблокирован или ты вышел
+            из приложения, звонит уведомление — у него системный звук, его файлом не заменить.
+            Вибрация работает в обоих случаях.
+          </Text>
         </View>
       )}
 
@@ -451,6 +658,22 @@ export default function FocusScreen() {
 }
 
 const styles = StyleSheet.create({
+  phaseRow: { flexDirection: "row", gap: 8, marginTop: 14 },
+  phaseChip: {
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+  },
+  phaseChipActive: { backgroundColor: "rgba(224,138,85,0.14)" },
+  phaseChipText: { color: colors.textMuted, fontSize: 12 },
+  phaseChipTextActive: { color: colors.accent },
+  phaseChipMin: { color: colors.textMuted, fontSize: 10, marginTop: 2 },
+  phaseChipMinActive: { color: colors.accent },
+  soundRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 },
+  soundName: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  soundError: { color: colors.accent, fontSize: 11, marginTop: 6, lineHeight: 16 },
   container: { flex: 1, backgroundColor: colors.bg },
   content: { alignItems: "center", paddingTop: 40, paddingHorizontal: 24, paddingBottom: 40 },
   // The tip is the one full-width thing on a screen that centres everything else.
