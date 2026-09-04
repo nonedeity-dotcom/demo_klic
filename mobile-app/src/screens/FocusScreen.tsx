@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, TextInput, Modal, AppState, ScrollView, StyleSheet } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { View, Text, Pressable, TextInput, Modal, ScrollView, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Feather } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,17 +8,21 @@ import { colors } from "../theme/colors";
 import TipCard from "../components/TipCard";
 import { TIPS, rotationNumber } from "../content/library";
 import { todayKey } from "../lib/date";
+import { plural } from "../lib/plural";
 import { useFold } from "../lib/useFold";
 import {
+  CYCLE_PHASES,
   FOCUS_PHASES,
   PHASE_CAPTIONS,
-  PHASE_FIELDS,
   PHASE_LABELS,
+  RING_TIMEOUT_MS,
   countsAsSession,
-  nextPhase,
+  nextCyclePhase,
   phaseMinutes,
+  type CyclePhase,
   type FocusPhase,
 } from "../lib/focusPhases";
+import { useCountdown } from "../lib/useCountdown";
 import {
   cancelChime,
   clearPhaseSound,
@@ -54,9 +58,9 @@ const SOUND_TIP = TIPS.find((t) => t.id === "focus-sound")!;
 
 export default function FocusScreen() {
   const qc = useQueryClient();
-  // "work" rather than "boredom" on open: the wind-down is something you choose to do
-  // before a session, and defaulting to it would make the first tap start the wrong clock.
-  const [phase, setPhase] = useState<FocusPhase>("work");
+  // The main ring only ever shows work or break. Boredom has its own clock further down —
+  // it is preparation for a session, not a leg of the loop.
+  const [phase, setPhase] = useState<CyclePhase>("work");
   // The lengths are a saved setting now, not constants. Until the stored value
   // arrives the defaults stand in, and the idle timer is re-seeded from it —
   // see the effect below.
@@ -81,22 +85,13 @@ export default function FocusScreen() {
    * you are looking at it" are different promises.
    */
   const [alarmArmed, setAlarmArmed] = useState<boolean | null>(null);
+  /** The same answer for the boredom clock, which arms its own alarm. */
+  const [boredomArmed, setBoredomArmed] = useState<boolean | null>(null);
 
   useEffect(() => {
     getFocusSounds().then(setSounds);
   }, []);
   const [draft, setDraft] = useState<FocusIntervals>(DEFAULT_FOCUS_INTERVALS);
-
-  const [secondsLeft, setSecondsLeft] = useState(DEFAULT_FOCUS_INTERVALS.workMin * 60);
-  const [running, setRunning] = useState(false);
-  // The timer is driven by a wall-clock deadline, not by counting ticks.
-  // setInterval only fires while JS is running, so the old version froze the
-  // moment the screen locked or the app went to the background — in an app
-  // whose whole advice is "put the phone in another room", the 50 minutes
-  // never actually elapsed. Now the interval only *renders* the remaining
-  // time; the truth is `deadlineRef` vs. Date.now().
-  const deadlineRef = useRef<number | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [showReward, setShowReward] = useState(false);
   const [editingRewards, setEditingRewards] = useState(false);
@@ -139,88 +134,74 @@ export default function FocusScreen() {
     },
   });
 
-  // True from the moment a phase is started until it ends or is reset. Pause
-  // also sets `running` to false, so re-seeding on `!running` alone would wipe
-  // a paused session the moment the stored lengths loaded.
-  const startedRef = useRef(false);
+  // --- the two clocks ---------------------------------------------------------------
+  // Each end handler needs the countdown it belongs to (the break arms itself), and the
+  // countdown needs the handler — so the handlers go in through refs, assigned below.
+  const cycleEndRef = useRef<() => void>(() => {});
+  const boredomEndRef = useRef<() => void>(() => {});
+  const cycle = useCountdown(phaseMinutes(intervals, phase) * 60, () => cycleEndRef.current());
+  const boredom = useCountdown(intervals.boredomMin * 60, () => boredomEndRef.current());
 
-  // An untouched timer should show the length that is actually saved —
-  // including right after the stored value first loads, and right after it is
-  // changed. A session in progress is left alone: silently retargeting it
-  // would either cut it short or extend it without asking.
-  useEffect(() => {
-    if (running || startedRef.current) return;
-    setSecondsLeft(phaseMinutes(intervals, phase) * 60);
-  }, [intervals, phase, running]);
+  // --- the ring at the end of a stretch ----------------------------------------------
+  /** Which stretch just ended and is currently making noise, or null. */
+  const [ringing, setRinging] = useState<FocusPhase | null>(null);
+  const [ringLeft, setRingLeft] = useState(0);
+  const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ringTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Guards against the phase flipping twice: the old code called this from
-  // inside a setSecondsLeft updater, and React may run an updater more than
-  // once — which logged the same focus session twice and reopened the modal.
-  const endingRef = useRef(false);
+  const clearRingTimers = () => {
+    if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
+    if (ringTickRef.current) clearInterval(ringTickRef.current);
+    ringTimeoutRef.current = null;
+    ringTickRef.current = null;
+  };
 
-  const handleSessionEnd = useCallback(() => {
-    if (endingRef.current) return;
-    endingRef.current = true;
+  /**
+   * The end of the ring, however it got there — the button or the ten seconds running out.
+   * Both do the same thing, which is the point: walking away is a valid way to answer.
+   */
+  const finishRing = (source: FocusPhase) => {
+    clearRingTimers();
+    setRinging(null);
+    void stopChime();
+    if (source !== "work") return;
+    // The break starts itself. Having to come back and press start is exactly how a
+    // ten-minute break becomes forty.
+    const secs = phaseMinutes(intervals, "break") * 60;
+    const deadline = cycle.start(secs);
+    if (deadline) scheduleChime("break", deadline).then(setAlarmArmed);
+    setShowReward(true); // offline-progress step, now alongside a break already running
+  };
 
-    deadlineRef.current = null;
-    setRunning(false);
-    startedRef.current = false;
-    setAlarmArmed(null);
+  const beginRing = (source: FocusPhase) => {
     // We got here with the app open, so the notification armed for this deadline would only
-    // be a duplicate of the chime about to play.
-    void cancelChime();
-    void playPhaseChime(phase);
+    // duplicate the chime about to play.
+    void cancelChime(source);
+    void playPhaseChime(source);
+    clearRingTimers();
+    setRinging(source);
+    setRingLeft(Math.round(RING_TIMEOUT_MS / 1000));
+    ringTickRef.current = setInterval(() => setRingLeft((v) => Math.max(0, v - 1)), 1000);
+    ringTimeoutRef.current = setTimeout(() => finishRing(source), RING_TIMEOUT_MS);
+  };
 
-    const next = nextPhase(phase);
-    if (countsAsSession(phase)) {
-      logSession.mutate(phaseMinutes(intervals, phase));
-      setShowReward(true); // offline-progress step: pick a reward before the break starts
-    }
-    setPhase(next);
-    setSecondsLeft(phaseMinutes(intervals, next) * 60);
-    // Released on the next tick, once the state updates above are queued.
-    setTimeout(() => {
-      endingRef.current = false;
-    }, 0);
-  }, [phase, intervals, logSession]);
-
-  // Read through a ref so the ticking effect below depends only on `running`.
-  // Depending on the callback itself would tear down and rebuild the interval
-  // on every single re-render — i.e. twice a second while the timer runs.
-  const endRef = useRef(handleSessionEnd);
+  // Assigned every render so the handlers close over the current intervals and phase; the
+  // countdown reads them through its own ref, so this costs nothing.
   useEffect(() => {
-    endRef.current = handleSessionEnd;
-  }, [handleSessionEnd]);
-
-  useEffect(() => {
-    if (!running) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = null;
-      return;
-    }
-
-    // Recompute from the deadline rather than decrementing, so time that
-    // passed while the app was backgrounded is accounted for.
-    const tick = () => {
-      const deadline = deadlineRef.current;
-      if (deadline == null) return;
-      const remaining = Math.max(0, Math.round((deadline - Date.now()) / 1000));
-      setSecondsLeft(remaining);
-      if (remaining === 0) endRef.current();
+    cycleEndRef.current = () => {
+      const finished = phase;
+      setAlarmArmed(null);
+      if (countsAsSession(finished)) logSession.mutate(phaseMinutes(intervals, finished));
+      setPhase(nextCyclePhase(finished));
+      beginRing(finished);
     };
-
-    intervalRef.current = setInterval(tick, 500);
-    // Catch up immediately on resume instead of waiting for the next tick.
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") tick();
-    });
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = null;
-      sub.remove();
+    boredomEndRef.current = () => {
+      setBoredomArmed(null);
+      beginRing("boredom");
     };
-  }, [running]);
+  });
+
+  useEffect(() => clearRingTimers, []);
 
   function pickReward(text: string) {
     if (!text.trim()) return;
@@ -230,26 +211,21 @@ export default function FocusScreen() {
   }
 
   const totalSecs = phaseMinutes(intervals, phase) * 60;
-  const pct = 1 - secondsLeft / totalSecs;
-  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
-  const ss = String(secondsLeft % 60).padStart(2, "0");
+  const pct = 1 - cycle.secondsLeft / totalSecs;
+  const mm = String(Math.floor(cycle.secondsLeft / 60)).padStart(2, "0");
+  const ss = String(cycle.secondsLeft % 60).padStart(2, "0");
+  const bMm = String(Math.floor(boredom.secondsLeft / 60)).padStart(2, "0");
+  const bSs = String(boredom.secondsLeft % 60).padStart(2, "0");
 
   const toggleRunning = () => {
-    if (running) {
-      // Pause: freeze at whatever the deadline says right now.
-      const deadline = deadlineRef.current;
-      if (deadline != null) setSecondsLeft(Math.max(0, Math.round((deadline - Date.now()) / 1000)));
-      deadlineRef.current = null;
-      setRunning(false);
+    if (cycle.running) {
+      cycle.pause();
       setAlarmArmed(null);
       // Otherwise a paused timer still goes off at the original deadline.
-      void cancelChime();
+      void cancelChime(phase);
     } else {
-      if (secondsLeft <= 0) return;
-      const deadline = Date.now() + secondsLeft * 1000;
-      deadlineRef.current = deadline;
-      startedRef.current = true;
-      setRunning(true);
+      const deadline = cycle.start();
+      if (deadline == null) return;
       void stopChime();
       // Armed here rather than at the end, because at the end this app may not be running.
       scheduleChime(phase, deadline).then(setAlarmArmed);
@@ -257,34 +233,44 @@ export default function FocusScreen() {
   };
 
   const resetTimer = () => {
-    deadlineRef.current = null;
-    setRunning(false);
-    startedRef.current = false;
+    cycle.reset(phaseMinutes(intervals, "work") * 60);
     setAlarmArmed(null);
-    void cancelChime();
+    void cancelChime("work");
+    void cancelChime("break");
     void stopChime();
     setPhase("work");
-    setSecondsLeft(phaseMinutes(intervals, "work") * 60);
     // A reward prompt left open from the session that just ended shouldn't
     // survive an explicit reset.
     setShowReward(false);
   };
 
-  /**
-   * Switching to another phase by hand. Whatever was running is dropped: three phases with
-   * one clock means picking a different one is starting over, and silently keeping the old
-   * countdown under a new label would be worse than either.
-   */
-  const selectPhase = (next: FocusPhase) => {
-    if (next === phase && !startedRef.current) return;
-    deadlineRef.current = null;
-    setRunning(false);
-    startedRef.current = false;
+  /** Switching between work and break by hand drops whatever was running under the old one. */
+  const selectPhase = (next: CyclePhase) => {
+    if (next === phase && !cycle.started) return;
     setAlarmArmed(null);
-    void cancelChime();
+    void cancelChime(phase);
     void stopChime();
     setPhase(next);
-    setSecondsLeft(phaseMinutes(intervals, next) * 60);
+    cycle.reset(phaseMinutes(intervals, next) * 60);
+  };
+
+  const toggleBoredom = () => {
+    if (boredom.running) {
+      boredom.pause();
+      setBoredomArmed(null);
+      void cancelChime("boredom");
+    } else {
+      const deadline = boredom.start();
+      if (deadline == null) return;
+      void stopChime();
+      scheduleChime("boredom", deadline).then(setBoredomArmed);
+    }
+  };
+
+  const resetBoredom = () => {
+    boredom.reset(intervals.boredomMin * 60);
+    setBoredomArmed(null);
+    void cancelChime("boredom");
   };
 
   const choosePhaseSound = async (target: FocusPhase) => {
@@ -323,10 +309,9 @@ export default function FocusScreen() {
     >
       <Text style={styles.subtle}>{PHASE_CAPTIONS[phase]}</Text>
 
-      {/* Three clocks, one ring. The row is the only way to reach boredom deliberately —
-          the automatic hand-over never goes back to it. */}
+      {/* Only the two that take turns. Boredom sits on its own card below. */}
       <View style={styles.phaseRow}>
-        {FOCUS_PHASES.map((p) => {
+        {CYCLE_PHASES.map((p) => {
           const active = p === phase;
           return (
             <Pressable
@@ -377,7 +362,7 @@ export default function FocusScreen() {
       <View style={{ flexDirection: "row", gap: 12, marginTop: 28 }}>
         <Pressable onPress={toggleRunning} style={styles.primaryBtn}>
           <Text style={styles.primaryBtnText}>
-            {running ? "Пауза" : secondsLeft === totalSecs ? "Старт" : "Продолжить"}
+            {cycle.running ? "Пауза" : cycle.secondsLeft === totalSecs ? "Старт" : "Продолжить"}
           </Text>
         </Pressable>
         <Pressable onPress={resetTimer} style={styles.secondaryBtn}>
@@ -387,7 +372,7 @@ export default function FocusScreen() {
 
       {/* The OS's answer, not ours: a timer you trust enough to walk away from has to say
           whether it can actually reach you. */}
-      {running && (
+      {cycle.running && (
         <Text style={styles.footnote}>
           {alarmArmed === false
             ? "Прозвенит только пока приложение открыто — уведомления запрещены."
@@ -396,12 +381,47 @@ export default function FocusScreen() {
       )}
 
       <Text style={styles.footnote}>
-        {phase === "boredom"
-          ? "Ничего не делай: без телефона, без музыки, без ленты. В этом весь смысл отрезка."
-          : phase === "work"
-            ? "Телефон — экраном вниз и подальше. Сигнал прозвенит сам."
-            : "Во время перерыва — без телефона: прогулка, чай, свежий воздух."}
+        {phase === "work"
+          ? "Телефон — экраном вниз и подальше. Сигнал прозвенит сам, отдых начнётся сам."
+          : "Во время перерыва — без телефона: прогулка, чай, свежий воздух."}
       </Text>
+
+      {/* Its own clock, its own buttons, wired to nothing else. Ten to twenty minutes of
+          deliberately nothing before you start — the source's entry ritual, which stopped
+          being one as soon as it sat inside the work/break loop. */}
+      <View style={styles.boredomCard}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.boredomTitle}>Скука</Text>
+          <Text style={styles.boredomHint}>
+            {boredom.running
+              ? boredomArmed === false
+                ? "Идёт. Прозвенит, только пока приложение открыто."
+                : "Идёт. Ничего не делай — ни телефона, ни музыки, ни ленты."
+              : "Отдельный отрезок перед работой. Ничего не запускает после себя."}
+          </Text>
+        </View>
+        <Text style={styles.boredomTime}>
+          {bMm}:{bSs}
+        </Text>
+        <Pressable
+          onPress={toggleBoredom}
+          accessibilityRole="button"
+          accessibilityLabel={boredom.running ? "Пауза: скука" : "Старт: скука"}
+          style={({ pressed }) => [styles.boredomBtn, pressed && styles.dimmed]}
+        >
+          <Feather name={boredom.running ? "pause" : "play"} size={14} color={colors.accent} />
+        </Pressable>
+        {boredom.started && (
+          <Pressable
+            onPress={resetBoredom}
+            accessibilityRole="button"
+            accessibilityLabel="Сброс: скука"
+            style={({ pressed }) => [styles.boredomBtn, pressed && styles.dimmed]}
+          >
+            <Feather name="rotate-ccw" size={14} color={colors.textMuted} />
+          </Pressable>
+        )}
+      </View>
 
       {/* The lengths used to be constants in this file. Editing is folded away
           by default so the screen stays a timer rather than a settings page. */}
@@ -468,7 +488,7 @@ export default function FocusScreen() {
             </View>
           ))}
 
-          {startedRef.current && !draftUnchanged && (
+          {(cycle.started || boredom.started) && !draftUnchanged && (
             <Text style={styles.editorNote}>
               Отрезок уже идёт — новая длительность применится со следующего.
             </Text>
@@ -579,6 +599,39 @@ export default function FocusScreen() {
         />
       </View>
 
+      {/* The alarm itself. It closes on its own after ten seconds, and closing it early does
+          exactly the same thing — the button is a way to stop the noise, not a gate the next
+          stretch is waiting behind. */}
+      <Modal
+        visible={ringing !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => ringing && finishRing(ringing)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {ringing ? `${PHASE_LABELS[ringing][0].toUpperCase()}${PHASE_LABELS[ringing].slice(1)}` : ""} — время
+              вышло
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              {ringing === "work"
+                ? `Отдых начнётся сам через ${ringLeft} ${plural(ringLeft, ["секунду", "секунды", "секунд"])}.`
+                : `Звук выключится сам через ${ringLeft} ${plural(ringLeft, ["секунду", "секунды", "секунд"])}.`}
+            </Text>
+            <Pressable
+              onPress={() => ringing && finishRing(ringing)}
+              accessibilityRole="button"
+              accessibilityLabel="Выключить звук"
+              style={({ pressed }) => [styles.ringStop, pressed && styles.dimmed]}
+            >
+              <Feather name="bell-off" size={15} color={colors.bg} />
+              <Text style={styles.ringStopText}>Выключить</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={showReward} transparent animationType="fade" onRequestClose={() => setShowReward(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -674,6 +727,39 @@ const styles = StyleSheet.create({
   soundRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 },
   soundName: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
   soundError: { color: colors.accent, fontSize: 11, marginTop: 6, lineHeight: 16 },
+  boredomCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    alignSelf: "stretch",
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 16,
+  },
+  boredomTitle: { color: colors.text, fontSize: 14 },
+  boredomHint: { color: colors.textMuted, fontSize: 11, marginTop: 3, lineHeight: 15 },
+  boredomTime: { color: colors.text, fontSize: 18, fontVariant: ["tabular-nums"] },
+  boredomBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.cardBorder,
+  },
+  ringStop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 18,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.accent,
+  },
+  ringStopText: { color: colors.bg, fontSize: 14, fontWeight: "600" },
   container: { flex: 1, backgroundColor: colors.bg },
   content: { alignItems: "center", paddingTop: 40, paddingHorizontal: 24, paddingBottom: 40 },
   // The tip is the one full-width thing on a screen that centres everything else.

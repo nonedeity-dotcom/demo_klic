@@ -25,7 +25,14 @@ import { PHASE_LABELS } from "../lib/focusPhases";
  */
 
 const SOUNDS_KEY = "focus-sounds-v1";
-const SCHEDULED_KEY = "focus-chime-id-v1";
+/**
+ * Scheduled notification ids, one per phase.
+ *
+ * A single id was enough while there was one clock; with the boredom timer running beside
+ * the work/break ring, cancelling on pause has to cancel *that* timer's alarm and leave the
+ * other one armed.
+ */
+const SCHEDULED_KEY = "focus-chime-ids-v1";
 export const CHANNEL_ID = "focus-timer";
 
 /** Where a picked file is copied to, so it survives the picker's temp cache being cleared. */
@@ -218,7 +225,7 @@ export async function ensureChimeChannel(): Promise<void> {
  * "will it ring if I put the phone down" and is what the screen shows.
  */
 export async function scheduleChime(phase: FocusPhase, deadline: number): Promise<boolean> {
-  await cancelChime();
+  await cancelChime(phase);
   const seconds = Math.round((deadline - Date.now()) / 1000);
   if (seconds <= 0) return false;
   try {
@@ -237,24 +244,56 @@ export async function scheduleChime(phase: FocusPhase, deadline: number): Promis
       },
       trigger: { seconds, channelId: CHANNEL_ID },
     });
-    await AsyncStorage.setItem(SCHEDULED_KEY, id);
+    const ids = await readScheduled();
+    await writeScheduled({ ...ids, [phase]: id });
     return true;
   } catch {
     return false;
   }
 }
 
-/** Drops the armed alarm — on pause, on reset, and when a phase ends with the app open. */
-export async function cancelChime(): Promise<void> {
+async function readScheduled(): Promise<Partial<Record<FocusPhase, string>>> {
   try {
-    const id = await AsyncStorage.getItem(SCHEDULED_KEY);
-    if (id) await Notifications.cancelScheduledNotificationAsync(id);
+    const raw = await AsyncStorage.getItem(SCHEDULED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Partial<Record<FocusPhase, string>> = {};
+    for (const phase of ["boredom", "work", "break"] as FocusPhase[]) {
+      const v = parsed[phase];
+      if (typeof v === "string" && v) out[phase] = v;
+    }
+    return out;
   } catch {
-    // Already fired or already gone.
+    return {};
   }
+}
+
+async function writeScheduled(ids: Partial<Record<FocusPhase, string>>): Promise<void> {
   try {
-    await AsyncStorage.removeItem(SCHEDULED_KEY);
+    await AsyncStorage.setItem(SCHEDULED_KEY, JSON.stringify(ids));
   } catch {
-    // Nothing depends on the key being clean; the id is re-written on the next schedule.
+    // Nothing depends on the key being clean; ids are re-written on the next schedule.
   }
+}
+
+/**
+ * Drops an armed alarm — on pause, on reset, and when a phase ends with the app open.
+ *
+ * With no argument it drops all of them, which is what a reset means. With a phase it drops
+ * only that one, so pausing the boredom clock cannot silence a work block still running.
+ */
+export async function cancelChime(phase?: FocusPhase): Promise<void> {
+  const ids = await readScheduled();
+  const targets = phase ? ([phase] as FocusPhase[]) : (Object.keys(ids) as FocusPhase[]);
+  for (const t of targets) {
+    const id = ids[t];
+    if (!id) continue;
+    try {
+      await Notifications.cancelScheduledNotificationAsync(id);
+    } catch {
+      // Already fired or already gone.
+    }
+    delete ids[t];
+  }
+  await writeScheduled(ids);
 }
