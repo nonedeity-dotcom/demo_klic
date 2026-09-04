@@ -38,6 +38,15 @@ export interface Habit {
    *  instead of by tapping — currently only "screentime" (from creker), see
    *  src/integrations/screenTime.ts. */
   auto?: "screentime" | null;
+  /**
+   * ISO timestamp of when the habit was put aside, or absent while it is in the checklist.
+   *
+   * The bin used to wipe the habit and every mark it ever had, which made "I'm not doing
+   * this one any more" and "this was a mistake, erase it" the same button. Archiving keeps
+   * the marks, so the habit's own report survives being retired — erasing for good is a
+   * second, deliberate step, taken from the archive.
+   */
+  archivedAt?: string | null;
 }
 
 export interface HabitLog {

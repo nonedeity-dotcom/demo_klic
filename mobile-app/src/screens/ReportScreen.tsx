@@ -16,7 +16,7 @@ import RotatingTip from "../components/RotatingTip";
 import StreakRing from "../components/StreakRing";
 import PhaseBar from "../components/PhaseBar";
 import HistoryCalendar from "../components/HistoryCalendar";
-import type { Habit, HabitLog, FocusSession, WeeklyReview } from "../types";
+import type { Habit, HabitLog, FocusSession, WeeklyReview, ItemGroup } from "../types";
 
 export default function ReportScreen({
   navigation,
@@ -85,7 +85,20 @@ export default function ReportScreen({
     onSuccess: (applied) => qc.setQueryData(["reportPrefs"], applied),
   });
 
-  const reportable = habits.filter((h) => habitGroup(h) !== "later" || streakLogs.some((l) => l.habitId === h.id && l.done));
+  // What this list is for is "how is each of the things I'm actually doing going" — so
+  // "Потом" never appears (a plan has nothing to report) and "Дополнительно" appears only
+  // once it has actually been ticked. Archived habits are already gone: getHabits drops
+  // them, and their reports live in the archive instead.
+  const wasEverDone = (h: Habit) => streakLogs.some((l) => l.habitId === h.id && l.done);
+  const reportGroups: { id: ItemGroup; title: string; habits: Habit[] }[] = [
+    { id: "now", title: "Ввожу сейчас", habits: habits.filter((h) => habitGroup(h) === "now") },
+    {
+      id: "extra",
+      title: "Дополнительно",
+      habits: habits.filter((h) => habitGroup(h) === "extra" && wasEverDone(h)),
+    },
+  ];
+  const reportable = reportGroups.flatMap((g) => g.habits);
   const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) ?? null;
   const [justCelebrated, setJustCelebrated] = useState<number | null>(null);
 
@@ -157,7 +170,13 @@ export default function ReportScreen({
             </View>
           </Pressable>
           {reportPrefs.habitsOpen &&
-            reportable.map((h) => {
+            reportGroups.map((group) =>
+              group.habits.length === 0 ? null : (
+                <View key={group.id}>
+                  {/* Named even when only one pile has anything in it: "Дополнительно" not
+                      counting towards the day is the whole reason these are separated. */}
+                  <Text style={styles.groupLabel}>{group.title}</Text>
+                  {group.habits.map((h) => {
             const stats = habitStats(h, streakLogs, today, freezes);
             return (
               <Pressable
@@ -188,7 +207,10 @@ export default function ReportScreen({
                 <Feather name="chevron-right" size={16} color={colors.textMuted} />
               </Pressable>
               );
-            })}
+                  })}
+                </View>
+              ),
+            )}
         </>
       )}
 
@@ -243,6 +265,8 @@ export default function ReportScreen({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   sectionLabel: { color: colors.textMuted, fontSize: 12, marginTop: 22, marginBottom: 8 },
+  // Sits inside the already-open section, so it needs less air above it than sectionLabel.
+  groupLabel: { color: colors.textMuted, fontSize: 11, marginTop: 10, marginBottom: 6 },
   subtleSmall: { color: colors.textMuted, fontSize: 11 },
 
   celebration: {

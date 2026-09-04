@@ -5,9 +5,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect } from "@react-navigation/native";
 import { api, DEFAULT_SCREEN_TIME_LIMIT_MIN } from "../api/client";
 import { colors } from "../theme/colors";
+import { plural } from "../lib/plural";
 import DataBackup from "../components/DataBackup";
 import NotificationAccess from "../components/NotificationAccess";
 import CrekerStatus from "../components/CrekerStatus";
+import type { Habit } from "../types";
 import {
   getReminderSettings,
   getReminderStatus,
@@ -84,6 +86,16 @@ export default function SettingsScreen({ navigation }: { navigation: { navigate:
   // covers the far more common case of editing the times and coming back.
   useFocusEffect(refreshReminder);
 
+  // Just the count for the row's hint — the screen itself loads the marks.
+  const { data: archived = [] } = useQuery<Habit[]>({
+    queryKey: ["archivedHabits"],
+    queryFn: () => api.getArchivedHabits() as Promise<Habit[]>,
+  });
+  const archiveHint =
+    archived.length === 0
+      ? "Пусто — сюда попадают привычки, убранные из чек-листа"
+      : `${archived.length} ${plural(archived.length, ["убранная привычка", "убранные привычки", "убранных привычек"])}`;
+
   const reminderHint = describeReminder(reminder, notifStatus);
 
   // The limit behind the "Экранное время в норме" habit was hardcoded at three
@@ -115,6 +127,11 @@ export default function SettingsScreen({ navigation }: { navigation: { navigate:
         label="Подсказки"
         hint="Всё, к чему подталкивает приложение, и почему"
         onPress={() => navigation.navigate("Library")}
+      />
+      <Row
+        label="Архив привычек"
+        hint={archiveHint}
+        onPress={() => navigation.navigate("Archive")}
       />
 
       <Text style={[styles.sectionLabel, styles.spaced]}>Уведомления</Text>

@@ -165,11 +165,37 @@ async function ensureSeeded() {
 }
 
 export const api = {
+  /**
+   * The checklist: everything not put aside.
+   *
+   * Archived habits are filtered out here rather than at each call site, because every
+   * screen that asks for "the habits" means the live ones — the streak's deciding set, the
+   * day's rows, the report's list. The two places that want the retired ones ask for them
+   * by name (getArchivedHabits, getAllHabits).
+   */
   async getHabits(): Promise<Habit[]> {
     await ensureSeeded();
     const habits = await read<Habit[]>(KEYS.habits, []);
     // sortOrder was stored but never actually applied, so the list only looked
     // right because the seed happened to be inserted in order.
+    return [...habits].filter((h) => !h.archivedAt).sort((a, b) => a.sortOrder - b.sortOrder);
+  },
+  /** The archive, most recently put aside first. */
+  async getArchivedHabits(): Promise<Habit[]> {
+    await ensureSeeded();
+    const habits = await read<Habit[]>(KEYS.habits, []);
+    return habits
+      .filter((h) => !!h.archivedAt)
+      .sort((a, b) => String(b.archivedAt).localeCompare(String(a.archivedAt)));
+  },
+  /**
+   * Both lists together. Only for looking one habit up by id — a habit's own report has to
+   * open from the archive as well as from the checklist, and that screen has no way of
+   * knowing which list the id came from.
+   */
+  async getAllHabits(): Promise<Habit[]> {
+    await ensureSeeded();
+    const habits = await read<Habit[]>(KEYS.habits, []);
     return [...habits].sort((a, b) => a.sortOrder - b.sortOrder);
   },
   async addHabit(label: string, hint?: string): Promise<Habit> {
@@ -197,6 +223,37 @@ export const api = {
       return { ok: true as const };
     });
   },
+  /**
+   * Puts a habit aside without losing anything.
+   *
+   * The marks stay exactly where they are, so restoring brings the whole history back and
+   * the habit's own report keeps working while it sits in the archive. It stops deciding
+   * the day the moment it leaves the checklist — that falls out of getHabits filtering it,
+   * not from anything the streak has to know about.
+   */
+  async archiveHabit(id: string): Promise<{ ok: true }> {
+    return withKeyLock(KEYS.habits, async () => {
+      const habits = await read<Habit[]>(KEYS.habits, []);
+      const at = new Date().toISOString();
+      await write(
+        KEYS.habits,
+        habits.map((h) => (h.id === id ? { ...h, archivedAt: at } : h)),
+      );
+      return { ok: true as const };
+    });
+  },
+  /** Back into the checklist, into whichever pile it was in when it was put aside. */
+  async restoreHabit(id: string): Promise<{ ok: true }> {
+    return withKeyLock(KEYS.habits, async () => {
+      const habits = await read<Habit[]>(KEYS.habits, []);
+      await write(
+        KEYS.habits,
+        habits.map((h) => (h.id === id ? { ...h, archivedAt: null } : h)),
+      );
+      return { ok: true as const };
+    });
+  },
+  /** The irreversible one, reachable only from the archive. */
   async removeHabit(id: string): Promise<{ ok: true }> {
     await withKeyLock(KEYS.habits, async () => {
       const habits = await read<Habit[]>(KEYS.habits, []);

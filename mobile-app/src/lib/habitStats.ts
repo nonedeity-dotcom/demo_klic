@@ -85,6 +85,47 @@ export function habitFirstDay(habit: Habit, logs: HabitLog[]): string | null {
   return first;
 }
 
+/** The last day it was done, or null if it never was. */
+export function habitLastDay(habit: Habit, logs: HabitLog[]): string | null {
+  let last: string | null = null;
+  for (const l of logs) {
+    if (l.habitId !== habit.id || !l.done) continue;
+    if (last === null || l.date > last) last = l.date;
+  }
+  return last;
+}
+
+/** How many separate days it was done at all. */
+export function habitDoneDays(habit: Habit, logs: HabitLog[]): number {
+  const days = new Set<string>();
+  for (const l of logs) if (l.habitId === habit.id && l.done) days.add(l.date);
+  return days.size;
+}
+
+export interface HabitRun {
+  /** Days actually marked done. */
+  doneDays: number;
+  firstDay: string | null;
+  lastDay: string | null;
+  /** Calendar days from the first mark to the last, inclusive. 0 when it never started. */
+  span: number;
+}
+
+/**
+ * What a retired habit amounts to: not "days in a row up to today" — that is always 0 once
+ * it stops being ticked — but how long it ran and how many days it got.
+ */
+export function habitRun(habit: Habit, logs: HabitLog[]): HabitRun {
+  const firstDay = habitFirstDay(habit, logs);
+  const lastDay = habitLastDay(habit, logs);
+  return {
+    doneDays: habitDoneDays(habit, logs),
+    firstDay,
+    lastDay,
+    span: firstDay && lastDay ? daysBetweenInclusive(firstDay, lastDay) : 0,
+  };
+}
+
 /** Calendar days from `from` to `to`, inclusive — "23-й день" counts the first one. */
 export function daysBetweenInclusive(from: string, to: string): number {
   const [fy, fm, fd] = from.split("-").map(Number);

@@ -127,19 +127,24 @@ export default function TodayScreen() {
     },
   });
 
-  const removeHabit = useMutation({
-    mutationFn: (id: string) => api.removeHabit(id),
+  const archiveHabit = useMutation({
+    mutationFn: (id: string) => api.archiveHabit(id),
     onSuccess: () => {
       invalidateHabits();
+      qc.invalidateQueries({ queryKey: ["archivedHabits"] });
       qc.invalidateQueries({ queryKey: ["habitLog"] });
     },
   });
 
-  // A single mis-tap on the trash icon used to delete a habit and its whole history
-  // instantly, with no undo.
-  const confirmRemove = (h: Habit) =>
-    confirmDestructive("Удалить привычку?", `«${h.label}» и её отметки за все дни будут удалены.`, () =>
-      removeHabit.mutate(h.id),
+  // Still behind a confirmation, but a much milder one than before: this used to erase the
+  // habit and every mark it ever had, with no undo. Now it moves house, and the only way to
+  // lose the history is a second, deliberate tap in the archive.
+  const confirmArchive = (h: Habit) =>
+    confirmDestructive(
+      "Убрать в архив?",
+      `«${h.label}» переедет в архив в настройках. Отметки сохранятся.`,
+      () => archiveHabit.mutate(h.id),
+      "Убрать",
     );
 
   const startEdit = (h: Habit) => {
@@ -229,7 +234,7 @@ export default function TodayScreen() {
                   week={weeklyProgress(h, weekLogs, weekDates)}
                   onBump={(minimal) => bump.mutate({ habit: h, minimal })}
                   onEdit={() => startEdit(h)}
-                  onRemove={() => confirmRemove(h)}
+                  onArchive={() => confirmArchive(h)}
                   onReset={() => resetDay.mutate(h.id)}
                 />
               ),
@@ -283,7 +288,7 @@ function HabitRow({
   week,
   onBump,
   onEdit,
-  onRemove,
+  onArchive,
   onReset,
 }: {
   habit: Habit;
@@ -295,7 +300,7 @@ function HabitRow({
   week: { count: number; target: number };
   onBump: (minimal?: boolean) => void;
   onEdit: () => void;
-  onRemove: () => void;
+  onArchive: () => void;
   onReset: () => void;
 }) {
   const target = habitTarget(habit);
@@ -361,8 +366,8 @@ function HabitRow({
             <Pressable onPress={onEdit} style={styles.iconBtn} accessibilityLabel={`Изменить: ${habit.label}`}>
               <Feather name="edit-2" size={14} color={colors.textMuted} />
             </Pressable>
-            <Pressable onPress={onRemove} style={styles.iconBtn} accessibilityLabel={`Удалить: ${habit.label}`}>
-              <Feather name="trash-2" size={14} color={colors.textMuted} />
+            <Pressable onPress={onArchive} style={styles.iconBtn} accessibilityLabel={`Убрать в архив: ${habit.label}`}>
+              <Feather name="archive" size={14} color={colors.textMuted} />
             </Pressable>
           </>
         )}

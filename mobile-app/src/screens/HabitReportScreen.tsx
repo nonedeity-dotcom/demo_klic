@@ -21,9 +21,11 @@ export default function HabitReportScreen({ route }: { route: { params: { habitI
   const today = useTodayKey();
   const habitId = route.params.habitId;
 
+  // Both lists: this screen opens from the archive as well as from the report, and an
+  // archived habit is exactly the one whose history is worth looking at.
   const { data: habits = [] } = useQuery<Habit[]>({
-    queryKey: ["habits"],
-    queryFn: () => api.getHabits() as Promise<Habit[]>,
+    queryKey: ["habits", "all"],
+    queryFn: () => api.getAllHabits() as Promise<Habit[]>,
   });
   const windowStart = dateNDaysAgo(HABIT_WINDOW_DAYS);
   const { data: logs = [] } = useQuery<HabitLog[]>({
@@ -37,6 +39,7 @@ export default function HabitReportScreen({ route }: { route: { params: { habitI
 
   const habit = habits.find((h) => h.id === habitId);
   if (!habit) return null;
+  const archived = !!habit.archivedAt;
 
   const stats = habitStats(habit, logs, today, freezes);
   const target = habitTarget(habit);
@@ -55,6 +58,7 @@ export default function HabitReportScreen({ route }: { route: { params: { habitI
             ? `идёт с ${formatDateShort(stats.firstDay)} · ${stats.daysSinceStart}-й день`
             : "ещё ни разу не отмечена"}
         </Text>
+        {archived && <Text style={styles.archived}>в архиве — не влияет на зачёт дня</Text>}
         <Text style={styles.target}>
           {target.kind === "daily"
             ? `${target.count} ${plural(target.count, ["раз", "раза", "раз"])} в день`
@@ -76,4 +80,5 @@ const styles = StyleSheet.create({
   unit: { color: colors.text, fontSize: 14, marginTop: 2 },
   since: { color: colors.textMuted, fontSize: 12, marginTop: 10, textAlign: "center" },
   target: { color: colors.textMuted, fontSize: 11, marginTop: 4 },
+  archived: { color: colors.textMuted, fontSize: 11, marginTop: 6, fontStyle: "italic" },
 });
