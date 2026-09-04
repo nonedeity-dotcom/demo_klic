@@ -7,7 +7,7 @@ import TipCard from "../components/TipCard";
 /**
  * The whole reference, grouped into the four themes the app is built on.
  *
- * One section is open at a time: forty-odd tips laid out flat is exactly the
+ * One section is open at a time: five dozen tips laid out flat is exactly the
  * scrollable feed this app exists to argue against.
  */
 export default function LibraryScreen() {
