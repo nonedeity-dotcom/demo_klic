@@ -160,7 +160,7 @@
 ## Как это устроено
 
 ```
-demo_klic/
+sterzhen/
 ├── mobile-app/   React Native + Expo + TypeScript   ← приложение
 ├── backend/      Fastify + Prisma + PostgreSQL      ← не используется, см. ниже
 └── docs/         скриншоты
