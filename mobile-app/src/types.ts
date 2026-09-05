@@ -39,6 +39,16 @@ export interface Habit {
    *  src/integrations/screenTime.ts. */
   auto?: "screentime" | null;
   /**
+   * The local date the habit joined the checklist.
+   *
+   * A day is judged against the habits that existed on it. Without this, the streak walked
+   * backwards judging every past day by *today's* list — so adding one habit re-judged
+   * yesterday against a habit that had not been invented yet, found it unticked, and wiped
+   * the whole chain. Backfilled once for habits from before this field existed; see
+   * migrateHabitCreatedAt.
+   */
+  createdAt?: string;
+  /**
    * ISO timestamp of when the habit was put aside, or absent while it is in the checklist.
    *
    * The bin used to wipe the habit and every mark it ever had, which made "I'm not doing

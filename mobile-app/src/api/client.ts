@@ -12,6 +12,7 @@ import type {
   Task,
   WeeklyReview,
 } from "../types";
+import { todayKey } from "../lib/date";
 
 // Local-only storage: no account, no server. Everything lives in
 // AsyncStorage on this device — same idea as the original demo's
@@ -156,6 +157,36 @@ async function ensureSeeded() {
   if ((await AsyncStorage.getItem(KEYS.habits)) === null) await write(KEYS.habits, DEFAULT_HABITS);
   if ((await AsyncStorage.getItem(KEYS.triggers)) === null) await write(KEYS.triggers, DEFAULT_TRIGGERS);
   if ((await AsyncStorage.getItem(KEYS.rewardOptions)) === null) await write(KEYS.rewardOptions, DEFAULT_REWARD_OPTIONS);
+  await migrateHabitCreatedAt();
+}
+
+/**
+ * Stamps a start date on habits saved before there was one.
+ *
+ * The date is the habit's first mark, because that is the only evidence on the device of
+ * when it actually started being a habit. One that was never ticked gets today: it has no
+ * history to judge, and dating it to the beginning of time is exactly the bug this fixes —
+ * a habit added yesterday would still be re-judging last month.
+ *
+ * Runs once. Afterwards every habit has the field and this is a no-op.
+ */
+async function migrateHabitCreatedAt(): Promise<void> {
+  const habits = await read<Habit[]>(KEYS.habits, []);
+  if (habits.length === 0 || habits.every((h) => !!h.createdAt)) return;
+
+  const logs = await read<HabitLog[]>(KEYS.habitLog, []);
+  const firstMark = new Map<string, string>();
+  for (const l of logs) {
+    if (!l.done) continue;
+    const seen = firstMark.get(l.habitId);
+    if (seen === undefined || l.date < seen) firstMark.set(l.habitId, l.date);
+  }
+
+  const today = todayKey();
+  await write(
+    KEYS.habits,
+    habits.map((h) => (h.createdAt ? h : { ...h, createdAt: firstMark.get(h.id) ?? today })),
+  );
 }
 
 export const api = {
@@ -199,7 +230,16 @@ export const api = {
       // Max+1, not length: after any deletion, length collides with an
       // existing sortOrder and two habits fight for the same slot.
       const nextOrder = habits.reduce((max, h) => Math.max(max, h.sortOrder), -1) + 1;
-      const habit: Habit = { id: uid(), label, hint: hint ?? null, minimal: null, sortOrder: nextOrder };
+      const habit: Habit = {
+        id: uid(),
+        label,
+        hint: hint ?? null,
+        minimal: null,
+        sortOrder: nextOrder,
+        // Without this the streak would judge every day before today against it, and adding
+        // one habit would wipe a chain that had nothing to do with it.
+        createdAt: todayKey(),
+      };
       await write(KEYS.habits, [...habits, habit]);
       return habit;
     });

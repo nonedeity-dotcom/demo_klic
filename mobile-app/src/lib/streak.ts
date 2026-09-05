@@ -7,8 +7,8 @@ import type { Habit, HabitLog } from "../types";
 export const STREAK_WINDOW_DAYS = 120;
 
 /**
- * Whether a single day met the bar: every habit you are currently introducing reached its
- * target for that day.
+ * Whether a single day met the bar: every habit that was in the "now" pile *on that day*
+ * reached its target for it.
  *
  * It used to be "half of all habits", which is why a list of ten things you eventually want
  * made the bar ten tall and then let you clear it with five. The bar is now exactly as tall
@@ -21,7 +21,7 @@ export const STREAK_WINDOW_DAYS = 120;
  * which once reported a 120-day streak for nothing at all.
  */
 export function dayCounts(habits: Habit[], logs: HabitLog[], date: string): boolean {
-  const deciding = habitsThatDecideTheDay(habits);
+  const deciding = habitsThatDecideTheDay(habits, date);
   if (deciding.length === 0) return false;
   const counts = new Map<string, number>();
   for (const l of logs) if (l.date === date) counts.set(l.habitId, logCount(l));
@@ -40,9 +40,8 @@ function meetsDay(deciding: Habit[], counts: Map<string, number>): boolean {
  * re-scan the whole log for each one. Same verdict, one walk.
  */
 export function countedDates(habits: Habit[], logs: HabitLog[]): Set<string> {
-  const deciding = habitsThatDecideTheDay(habits);
   const counted = new Set<string>();
-  if (deciding.length === 0) return counted;
+  if (habitsThatDecideTheDay(habits).length === 0) return counted;
 
   const byDate = new Map<string, Map<string, number>>();
   for (const l of logs) {
@@ -54,7 +53,12 @@ export function countedDates(habits: Habit[], logs: HabitLog[]): Set<string> {
     // Two rows for one habit on one day shouldn't halve its count.
     day.set(l.habitId, Math.max(day.get(l.habitId) ?? 0, logCount(l)));
   }
-  for (const [date, counts] of byDate) if (meetsDay(deciding, counts)) counted.add(date);
+  // The deciding set is per date, not per call: a habit added last week does not get a say
+  // in the week before it.
+  for (const [date, counts] of byDate) {
+    const deciding = habitsThatDecideTheDay(habits, date);
+    if (deciding.length > 0 && meetsDay(deciding, counts)) counted.add(date);
+  }
   return counted;
 }
 

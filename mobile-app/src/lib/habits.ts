@@ -57,11 +57,22 @@ export function weeklyProgress(habit: Habit, logs: HabitLog[], dates: string[]):
 }
 
 /**
- * The habits a day is judged against: the ones being introduced now, counted daily.
+ * The habits a day is judged against: the ones being introduced now, counted daily, and
+ * already in the checklist on that day.
  *
  * "Дополнительно" is done for the record and "потом" is a plan, so neither can fail a day.
  * Weekly habits are left out too — they would fail every day that isn't a training day.
+ *
+ * The date is what stops a new habit from re-judging the past. Without it the streak walked
+ * backwards asking "was everything on today's list done?" — so adding one habit found
+ * yesterday missing a mark that could not possibly exist and broke a chain of eleven days.
+ * A habit answers only for the days it was actually there for.
  */
-export function habitsThatDecideTheDay(habits: Habit[]): Habit[] {
-  return habits.filter((h) => habitGroup(h) === "now" && habitTarget(h).kind === "daily");
+export function habitsThatDecideTheDay(habits: Habit[], date?: string): Habit[] {
+  return habits.filter(
+    (h) =>
+      habitGroup(h) === "now" &&
+      habitTarget(h).kind === "daily" &&
+      (date === undefined || !h.createdAt || h.createdAt <= date),
+  );
 }
