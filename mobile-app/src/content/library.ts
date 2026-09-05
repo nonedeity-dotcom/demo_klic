@@ -6,14 +6,16 @@
  * app, and a tip that needs a network round trip is a tip you can't read on a
  * phone that's deliberately in another room.
  *
- * Source material: the talks the app itself was built from — a focus system
- * (50/10, boredom before work, entry ritual), a dopamine/trigger detox, a
- * "why people quit halfway" model (honeymoon → the dip → plateau), and one on
- * analysis paralysis; later ones on sound while working, on intake vs.
- * processing, and on laziness as overload. Where a source states something as
- * fact that is really its author's claim or a popular simplification, the tip
- * carries a `caveat` instead of repeating it as settled — the practice usually stands on its own
- * without the shaky explanation underneath it.
+ * Source material: eight talks the app was built from — a focus system (50/10,
+ * boredom before work, entry ritual), a dopamine/trigger detox, a "why people
+ * quit halfway" model (honeymoon → the dip → plateau), analysis paralysis,
+ * sound while working, six lessons on taking your own decisions, intake versus
+ * processing, and laziness as overload.
+ *
+ * Where a source states something as fact that is really its author's claim or
+ * a popular simplification, the tip carries a `caveat` instead of repeating it
+ * as settled — the practice usually stands on its own without the shaky
+ * explanation underneath it.
  */
 
 export interface LibrarySection {
