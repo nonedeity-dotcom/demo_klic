@@ -39,18 +39,23 @@ jobs:
       # in Settings.
       - name: Stamp the build number into app.json
         run: |
-          node -e '
-            const fs = require("fs");
-            // The job's default working-directory is already mobile-app, so this path is
-            // relative to that, not to the repository root.
-            const p = "app.json";
-            const j = JSON.parse(fs.readFileSync(p, "utf8"));
-            const run = Number(process.env.GITHUB_RUN_NUMBER) || 0;
-            j.expo.version = `1.0.${run}`;
-            j.expo.android.versionCode = run;
-            fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
-            console.log("version", j.expo.version, "versionCode", j.expo.android.versionCode);
-          '
+          # Written to a file through a quoted heredoc rather than passed to `node -e`:
+          # the inline version was single-quoted, and an apostrophe in one of its own
+          # comments closed the quote and handed the rest of the script to bash.
+          cat > stamp-version.js <<'JS'
+          const fs = require("fs");
+          // The job default working-directory is already mobile-app, so this path is
+          // relative to that, not to the repository root.
+          const p = "app.json";
+          const j = JSON.parse(fs.readFileSync(p, "utf8"));
+          const run = Number(process.env.GITHUB_RUN_NUMBER) || 0;
+          j.expo.version = `1.0.${run}`;
+          j.expo.android.versionCode = run;
+          fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+          console.log("version", j.expo.version, "versionCode", j.expo.android.versionCode);
+          JS
+          node stamp-version.js
+          rm stamp-version.js
 
       - name: Expo prebuild (generate native android project)
         run: npx expo prebuild --platform android --non-interactive
