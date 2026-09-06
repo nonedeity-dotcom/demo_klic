@@ -173,6 +173,7 @@ export default function TodayScreen() {
     else setAdding(false);
   };
 
+  const nowHabits = habits.filter((h) => habitGroup(h) === "now");
   const deciding = habitsThatDecideTheDay(habits);
   const closed = deciding.filter((h) => logCount(logs.find((l) => l.habitId === h.id)) >= perDayTarget(h)).length;
 
@@ -180,7 +181,14 @@ export default function TodayScreen() {
     <ScrollView style={styles.container} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 }}>
       <View style={styles.headerRow}>
         <Text style={styles.subtle}>
-          {deciding.length > 0 ? `Сегодня закрыто ${closed} из ${deciding.length}` : "Ни одной привычки в работе"}
+          {/* Only daily habits decide a day, so the count is over those. With nothing but
+              weekly ones in the pile "ни одной привычки в работе" was flatly wrong — there
+              are habits there, they just are not owed today. */}
+          {deciding.length > 0
+            ? `Сегодня закрыто ${closed} из ${deciding.length}`
+            : nowHabits.length > 0
+              ? "В работе только недельные — день по ним не засчитывается"
+              : "Ни одной привычки в работе"}
         </Text>
         <Pressable
           onPress={() => {
@@ -305,30 +313,49 @@ function HabitRow({
 }) {
   const target = habitTarget(habit);
   const perDay = perDayTarget(habit);
-  const done = count >= perDay;
+  const doneToday = count >= perDay;
+  const weekly = target.kind === "weekly";
+  /**
+   * What the checkbox answers.
+   *
+   * For a daily habit it is today. For a weekly one it is the *week*: "спорт 1 раз в
+   * неделю" done on Monday is not undone on Tuesday, and the row used to go back to an
+   * empty box the next morning as if the thing were still owed — a demand the habit does
+   * not actually make until the week turns over. What it owes is a number of days in the
+   * week, so that is what the box reports; the caption under it carries the count.
+   */
+  const closed = weekly ? week.count >= week.target : doneToday;
   // "Потом" is a plan: there is nothing to tick, and offering a checkbox would invite
   // ticking things you have not started.
   const tickable = group !== "later";
 
   return (
     <View style={styles.habitBlock}>
-      <View style={[styles.card, styles.cardInBlock, done && styles.cardChecked, !tickable && styles.cardLater]}>
+      <View style={[styles.card, styles.cardInBlock, closed && styles.cardChecked, !tickable && styles.cardLater]}>
         <Pressable
-          onPress={() => tickable && !done && onBump()}
-          disabled={!tickable || done}
+          // Still tappable on a met week if today has no mark on it: a fourth run in a
+          // week of three is a real thing that happened and should be recordable. What
+          // stops a tap is today already being marked, which is the case where it would
+          // do nothing.
+          onPress={() => tickable && !doneToday && onBump()}
+          disabled={!tickable || doneToday}
           accessibilityRole={perDay > 1 ? "button" : "checkbox"}
-          accessibilityState={{ checked: done, disabled: !tickable || done }}
+          accessibilityState={{ checked: closed, disabled: !tickable || doneToday }}
           accessibilityLabel={
-            perDay > 1 ? `${habit.label}: ${count} из ${perDay}` : habit.label
+            weekly
+              ? `${habit.label}: за неделю ${week.count} из ${week.target}`
+              : perDay > 1
+                ? `${habit.label}: ${count} из ${perDay}`
+                : habit.label
           }
           style={styles.cardMain}
         >
           {perDay > 1 ? (
-            <View style={[styles.counter, done && styles.counterDone]}>
-              <Text style={[styles.counterText, done && styles.counterTextDone]}>{count}</Text>
+            <View style={[styles.counter, doneToday && styles.counterDone]}>
+              <Text style={[styles.counterText, doneToday && styles.counterTextDone]}>{count}</Text>
             </View>
           ) : (
-            <View style={[styles.checkbox, done && styles.checkboxChecked, minimalDone && styles.checkboxMinimal]} />
+            <View style={[styles.checkbox, closed && styles.checkboxChecked, minimalDone && styles.checkboxMinimal]} />
           )}
           <View style={{ flex: 1 }}>
             <View style={styles.labelRow}>
@@ -344,12 +371,17 @@ function HabitRow({
             {/* What is owed, and how much of it is behind you. */}
             {tickable && perDay > 1 && (
               <Text style={styles.progress}>
-                {done ? `Готово: ${perDay} из ${perDay}` : `Сделано ${count} из ${perDay}`}
+                {doneToday ? `Готово: ${perDay} из ${perDay}` : `Сделано ${count} из ${perDay}`}
               </Text>
             )}
-            {tickable && target.kind === "weekly" && (
+            {tickable && weekly && (
               <Text style={styles.progress}>
-                {`За неделю ${week.count} из ${week.target}`}
+                {/* The box says whether the week is closed; this says how, and whether
+                    today is one of the days behind it. Without the second half a filled
+                    box on Thursday gives no way to tell "done today" from "done Monday". */}
+                {/* "2 из 1" is not a sentence. Past the target the count is still worth
+                    showing — an extra run happened — but as a total, not as a fraction. */}
+                {`${week.count > week.target ? `За неделю ${week.count}, цель ${week.target}` : `За неделю ${week.count} из ${week.target}`}${doneToday ? " · сегодня отмечено" : ""}`}
               </Text>
             )}
             {!tickable && <Text style={styles.progress}>{describeTarget(target)}</Text>}
@@ -375,7 +407,7 @@ function HabitRow({
 
       {/* Only where a minimal version was declared, and only while the full one is still
           open. Ticking it closes the day the small way — step 4 of the protocol. */}
-      {tickable && !!habit.minimal && !done && (
+      {tickable && !!habit.minimal && !closed && (
         <Pressable
           onPress={() => onBump(true)}
           accessibilityRole="button"
