@@ -41,7 +41,9 @@ jobs:
         run: |
           node -e '
             const fs = require("fs");
-            const p = "mobile-app/app.json";
+            // The job's default working-directory is already mobile-app, so this path is
+            // relative to that, not to the repository root.
+            const p = "app.json";
             const j = JSON.parse(fs.readFileSync(p, "utf8"));
             const run = Number(process.env.GITHUB_RUN_NUMBER) || 0;
             j.expo.version = `1.0.${run}`;
