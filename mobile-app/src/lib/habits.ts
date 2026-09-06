@@ -78,7 +78,13 @@ export function weeklyProgress(habit: Habit, logs: HabitLog[], dates: string[]):
  * most a day of credit; treating it as "always existed" costs everything.
  */
 function startOf(habit: Habit, startedOn?: Map<string, string>): string {
-  return startedOn?.get(habit.id) ?? habit.createdAt ?? "9999-12-31";
+  const start = startedOn?.get(habit.id) ?? habit.createdAt ?? "9999-12-31";
+  // The later of the two. A habit that left the checklist and came back — out to
+  // «дополнительно» and in again, or restored from the archive — was not owed for the days
+  // it was away, and judging it on them found a run of days with no marks and broke the
+  // chain at the first one.
+  const since = habit.nowSince;
+  return since !== undefined && since > start ? since : start;
 }
 
 export function habitsThatDecideTheDay(

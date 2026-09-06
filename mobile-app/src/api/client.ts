@@ -13,6 +13,7 @@ import type {
   WeeklyReview,
 } from "../types";
 import { todayKey, tomorrowKey } from "../lib/date";
+import { habitGroup, itemGroup } from "../lib/habits";
 
 // Local-only storage: no account, no server. Everything lives in
 // AsyncStorage on this device — same idea as the original demo's
@@ -35,6 +36,7 @@ const KEYS = {
   tasks: "tasks-v1",
   calendarPrefs: "calendar-prefs-v1",
   freezes: "streak-freezes-v1",
+  nowSinceRepair: "nowsince-repair-v1",
 };
 
 export interface CalendarPrefs {
@@ -158,6 +160,8 @@ async function ensureSeeded() {
   if ((await AsyncStorage.getItem(KEYS.triggers)) === null) await write(KEYS.triggers, DEFAULT_TRIGGERS);
   if ((await AsyncStorage.getItem(KEYS.rewardOptions)) === null) await write(KEYS.rewardOptions, DEFAULT_REWARD_OPTIONS);
   await migrateHabitCreatedAt();
+  // After it, not before: this one reads createdAt.
+  await repairNowSinceOnce();
 }
 
 /**
@@ -187,6 +191,53 @@ async function migrateHabitCreatedAt(): Promise<void> {
     KEYS.habits,
     habits.map((h) => (h.createdAt ? h : { ...h, createdAt: firstMark.get(h.id) ?? today })),
   );
+}
+
+/**
+ * Forgives, once, the chains this bug had already broken.
+ *
+ * `nowSince` fixes the rule going forward, but it cannot undo what happened before it
+ * existed: a habit created a couple of days ago, parked in «потом» or «дополнительно» and
+ * then moved into «ввожу сейчас» is stored with nothing but its old `createdAt`, so it goes
+ * on answering for the days it spent outside the checklist and the streak stays at zero
+ * however long you keep it.
+ *
+ * There is no record of when a habit joined the pile, so this cannot be exact. What it does
+ * is narrow: a habit that is in «ввожу сейчас», was created before today, and has never once
+ * been ticked, is forgiven its past and owed from tomorrow. Never having been marked is the
+ * signature of a habit that was somewhere else until now — and for one that really was on
+ * the list and simply never done, forgiving it raises the number by giving back days that
+ * were otherwise kept, which is the safe direction for a guess.
+ *
+ * Runs exactly once, behind its own key. As an ongoing rule it would be wrong: it would keep
+ * forgiving every habit you add and do not tick.
+ */
+async function repairNowSinceOnce(): Promise<void> {
+  if ((await AsyncStorage.getItem(KEYS.nowSinceRepair)) !== null) return;
+
+  const habits = await read<Habit[]>(KEYS.habits, []);
+  const logs = await read<HabitLog[]>(KEYS.habitLog, []);
+  const everMarked = new Set(logs.filter((l) => l.done).map((l) => l.habitId));
+  const today = todayKey();
+  const tomorrow = tomorrowKey();
+
+  await write(
+    KEYS.habits,
+    habits.map((h) =>
+      // `createdAt < today` keeps a fresh install out of it: the seeded habits are stamped
+      // with today by the migration above, and forgiving those would mean day one could
+      // never count.
+      !h.archivedAt &&
+      itemGroup(h) === "now" &&
+      h.nowSince === undefined &&
+      h.createdAt !== undefined &&
+      h.createdAt < today &&
+      !everMarked.has(h.id)
+        ? { ...h, nowSince: tomorrow }
+        : h,
+    ),
+  );
+  await AsyncStorage.setItem(KEYS.nowSinceRepair, "done");
 }
 
 export const api = {
@@ -247,6 +298,15 @@ export const api = {
       return habit;
     });
   },
+  /**
+   * Editing a habit — including moving it between the three piles.
+   *
+   * Moving one *into* «ввожу сейчас» from somewhere else re-stamps when it starts being
+   * owed. Without that it answers for every day since it was created, including the weeks
+   * it spent in «дополнительно» collecting no marks because it was not on the list — which
+   * takes the chain to zero on the first of them. Same rule as adding a new one: owed from
+   * tomorrow, tickable today.
+   */
   async updateHabit(
     id: string,
     data: { label?: string; hint?: string; minimal?: string | null; group?: ItemGroup; target?: HabitTarget },
@@ -255,7 +315,11 @@ export const api = {
       const habits = await read<Habit[]>(KEYS.habits, []);
       await write(
         KEYS.habits,
-        habits.map((h) => (h.id === id ? { ...h, ...data } : h)),
+        habits.map((h) => {
+          if (h.id !== id) return h;
+          const joiningNow = data.group === "now" && habitGroup(h) !== "now";
+          return joiningNow ? { ...h, ...data, nowSince: tomorrowKey() } : { ...h, ...data };
+        }),
       );
       return { ok: true as const };
     });
@@ -279,13 +343,19 @@ export const api = {
       return { ok: true as const };
     });
   },
-  /** Back into the checklist, into whichever pile it was in when it was put aside. */
+  /**
+   * Back into the checklist, into whichever pile it was in when it was put aside.
+   *
+   * It is owed again from tomorrow, not from whenever it was first created: the days it
+   * spent in the archive have no marks precisely because it was not on the list, and
+   * judging them would break the chain the moment you brought an old habit back.
+   */
   async restoreHabit(id: string): Promise<{ ok: true }> {
     return withKeyLock(KEYS.habits, async () => {
       const habits = await read<Habit[]>(KEYS.habits, []);
       await write(
         KEYS.habits,
-        habits.map((h) => (h.id === id ? { ...h, archivedAt: null } : h)),
+        habits.map((h) => (h.id === id ? { ...h, archivedAt: null, nowSince: tomorrowKey() } : h)),
       );
       return { ok: true as const };
     });

@@ -49,6 +49,20 @@ export interface Habit {
    */
   createdAt?: string;
   /**
+   * The local date the habit *re-entered* the checklist, when that is later than when it
+   * was created.
+   *
+   * `createdAt` alone answers "since when is this owed?" only for a habit that has been in
+   * the «ввожу сейчас» pile the whole time. Move an old habit out of that pile and back in,
+   * or restore one from the archive, and it starts answering for every day it was away —
+   * days it was never going to be ticked on, because it was not on the list. One move
+   * turned a three-day chain into zero.
+   *
+   * So the day a habit is owed from is the later of the two. Absent means it has never
+   * left, which is the ordinary case.
+   */
+  nowSince?: string;
+  /**
    * ISO timestamp of when the habit was put aside, or absent while it is in the checklist.
    *
    * The bin used to wipe the habit and every mark it ever had, which made "I'm not doing
