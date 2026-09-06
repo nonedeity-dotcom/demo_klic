@@ -21,7 +21,39 @@ export const STREAK_WINDOW_DAYS = 120;
  * which once reported a 120-day streak for nothing at all.
  */
 export function dayCounts(habits: Habit[], logs: HabitLog[], date: string): boolean {
-  const deciding = habitsThatDecideTheDay(habits, date);
+  return dayCountsWith(habits, logs, date, startsByHabit(habits, logs));
+}
+
+/**
+ * When each habit started deciding days.
+ *
+ * `createdAt` is the answer whenever it is there. When it is not — a row written before the
+ * field existed and not yet migrated, or one that arrived through a merge from an old
+ * backup — the first day the habit was actually marked is the next best evidence the device
+ * has, and it is the same rule the migration itself uses. A habit with neither is left out
+ * of the map entirely, which makes it decide nothing until it has a history.
+ */
+export function startsByHabit(habits: Habit[], logs: HabitLog[]): Map<string, string> {
+  const starts = new Map<string, string>();
+  for (const h of habits) if (h.createdAt) starts.set(h.id, h.createdAt);
+
+  const firstMarks = new Map<string, string>();
+  for (const l of logs) {
+    if (!l.done || starts.has(l.habitId)) continue;
+    const seen = firstMarks.get(l.habitId);
+    if (seen === undefined || l.date < seen) firstMarks.set(l.habitId, l.date);
+  }
+  for (const [id, first] of firstMarks) starts.set(id, first);
+  return starts;
+}
+
+function dayCountsWith(
+  habits: Habit[],
+  logs: HabitLog[],
+  date: string,
+  starts: Map<string, string>,
+): boolean {
+  const deciding = habitsThatDecideTheDay(habits, date, starts);
   if (deciding.length === 0) return false;
   const counts = new Map<string, number>();
   for (const l of logs) if (l.date === date) counts.set(l.habitId, logCount(l));
@@ -43,6 +75,7 @@ export function countedDates(habits: Habit[], logs: HabitLog[]): Set<string> {
   const counted = new Set<string>();
   if (habitsThatDecideTheDay(habits).length === 0) return counted;
 
+  const starts = startsByHabit(habits, logs);
   const byDate = new Map<string, Map<string, number>>();
   for (const l of logs) {
     let day = byDate.get(l.date);
@@ -56,7 +89,7 @@ export function countedDates(habits: Habit[], logs: HabitLog[]): Set<string> {
   // The deciding set is per date, not per call: a habit added last week does not get a say
   // in the week before it.
   for (const [date, counts] of byDate) {
-    const deciding = habitsThatDecideTheDay(habits, date);
+    const deciding = habitsThatDecideTheDay(habits, date, starts);
     if (deciding.length > 0 && meetsDay(deciding, counts)) counted.add(date);
   }
   return counted;
@@ -74,11 +107,13 @@ export function computeStreak(habits: Habit[], logs: HabitLog[], frozen: string[
   if (habitsThatDecideTheDay(habits).length === 0) return 0;
 
   const frozenDays = new Set(frozen);
+  // Built once: dayCounts would otherwise re-derive it for each of 120 days.
+  const starts = startsByHabit(habits, logs);
 
   let streak = 0;
   for (let i = 0; i < STREAK_WINDOW_DAYS; i++) {
     const day = dateNDaysAgo(i);
-    if (dayCounts(habits, logs, day)) streak++;
+    if (dayCountsWith(habits, logs, day, starts)) streak++;
     // Today still being unfinished shouldn't break yesterday's streak.
     else if (i === 0) continue;
     // A frozen day neither breaks the chain nor adds to it. Counting it as a day would be

@@ -12,7 +12,7 @@ import type {
   Task,
   WeeklyReview,
 } from "../types";
-import { todayKey } from "../lib/date";
+import { todayKey, tomorrowKey } from "../lib/date";
 
 // Local-only storage: no account, no server. Everything lives in
 // AsyncStorage on this device — same idea as the original demo's
@@ -236,9 +236,12 @@ export const api = {
         hint: hint ?? null,
         minimal: null,
         sortOrder: nextOrder,
-        // Without this the streak would judge every day before today against it, and adding
-        // one habit would wipe a chain that had nothing to do with it.
-        createdAt: todayKey(),
+        // Tomorrow, not today. Without any date the streak judged every past day against a
+        // habit that had just been invented and wiped the whole chain; with today's date it
+        // still un-completed today, so adding a habit in the morning dropped the number by
+        // one until you ticked it. A habit is something you start keeping from the next
+        // day — ticking it earlier still counts, it just isn't owed yet.
+        createdAt: tomorrowKey(),
       };
       await write(KEYS.habits, [...habits, habit]);
       return habit;

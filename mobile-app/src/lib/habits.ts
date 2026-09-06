@@ -68,11 +68,38 @@ export function weeklyProgress(habit: Habit, logs: HabitLog[], dates: string[]):
  * yesterday missing a mark that could not possibly exist and broke a chain of eleven days.
  * A habit answers only for the days it was actually there for.
  */
-export function habitsThatDecideTheDay(habits: Habit[], date?: string): Habit[] {
+/**
+ * The day a habit began deciding days: the map first, then its stored `createdAt`, and
+ * failing both a date far in the future — which means "not yet", so it judges nothing.
+ *
+ * The far-future fallback is deliberate and is the whole safety net. Before it, a habit
+ * with no start date judged every day that ever existed, so a single row missing the field
+ * took the entire chain to zero. Treating an unknown start as "hasn't started" costs at
+ * most a day of credit; treating it as "always existed" costs everything.
+ */
+function startOf(habit: Habit, startedOn?: Map<string, string>): string {
+  return startedOn?.get(habit.id) ?? habit.createdAt ?? "9999-12-31";
+}
+
+export function habitsThatDecideTheDay(
+  habits: Habit[],
+  date?: string,
+  /**
+   * When a habit started deciding days, by id. Anything missing from this map falls back to
+   * `createdAt`, and a habit with neither is treated as having started *today* — i.e. it
+   * judges nothing in the past.
+   *
+   * That fallback is the point. It used to be the opposite: a habit with no start date
+   * judged every day that ever was, so one row without the field wiped the whole chain.
+   * Guessing a habit is new is a number that is one day pessimistic; guessing it is ancient
+   * is a number that is zero.
+   */
+  startedOn?: Map<string, string>,
+): Habit[] {
   return habits.filter(
     (h) =>
       habitGroup(h) === "now" &&
       habitTarget(h).kind === "daily" &&
-      (date === undefined || !h.createdAt || h.createdAt <= date),
+      (date === undefined || startOf(h, startedOn) <= date),
   );
 }

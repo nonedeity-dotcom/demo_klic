@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, AppState, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import * as Application from "expo-application";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect } from "@react-navigation/native";
 import { api, DEFAULT_SCREEN_TIME_LIMIT_MIN } from "../api/client";
@@ -37,6 +38,18 @@ function Row({ label, hint, onPress }: { label: string; hint: string; onPress: (
       <Feather name="chevron-right" size={18} color={colors.textMuted} />
     </Pressable>
   );
+}
+
+/**
+ * "Сборка 53" — the CI run number, taken from what the OS reports about the installed
+ * package rather than from anything the JS bundle believes about itself.
+ */
+function buildLine(): string {
+  const code = Application.nativeBuildVersion;
+  const name = Application.nativeApplicationVersion;
+  if (code) return `Сборка ${code}`;
+  // Web, or a build where the native side has nothing to say.
+  return name ? `Версия ${name}` : "Версия неизвестна";
 }
 
 function formatMinutes(min: number) {
@@ -184,6 +197,11 @@ export default function SettingsScreen({ navigation }: { navigation: { navigate:
       <View style={styles.spaced}>
         <DataBackup />
       </View>
+
+      {/* Last, small, and easy to read out loud. Every build used to call itself 1.0.0, so
+          "which version are you on" — the first question when something behaves like a bug
+          that was already fixed — had no answer anywhere on the device. */}
+      <Text style={styles.version}>{buildLine()}</Text>
     </ScrollView>
   );
 }
@@ -191,6 +209,7 @@ export default function SettingsScreen({ navigation }: { navigation: { navigate:
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   sectionLabel: { color: colors.textMuted, fontSize: 12, marginBottom: 8 },
+  version: { color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 28 },
   spaced: { marginTop: 18 },
   row: {
     flexDirection: "row",

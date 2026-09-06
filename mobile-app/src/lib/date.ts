@@ -20,6 +20,20 @@ export function todayKey(): string {
   return toDateKey(new Date());
 }
 
+/**
+ * Tomorrow, locally — the day a habit added now starts being required.
+ *
+ * Stamping a new habit with *today* meant adding one at nine in the morning retroactively
+ * un-completed a day that was already closed, and the streak dropped by one until the new
+ * habit was ticked. A day you have already finished should not stop counting because you
+ * planned something new during it.
+ */
+export function tomorrowKey(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return toDateKey(d);
+}
+
 /** Local date key n days back from today (n = 0 is today). */
 export function dateNDaysAgo(n: number): string {
   const d = new Date();

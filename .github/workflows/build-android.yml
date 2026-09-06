@@ -33,6 +33,23 @@ jobs:
       - name: Install JS dependencies
         run: npm install
 
+      # Every build was versionCode 1 and version "1.0.0", so nothing on the phone could
+      # say which one was installed — and "is the fix in the build you are running?" was a
+      # question nobody could answer. Both now carry the run number, and the app shows them
+      # in Settings.
+      - name: Stamp the build number into app.json
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = "mobile-app/app.json";
+            const j = JSON.parse(fs.readFileSync(p, "utf8"));
+            const run = Number(process.env.GITHUB_RUN_NUMBER) || 0;
+            j.expo.version = `1.0.${run}`;
+            j.expo.android.versionCode = run;
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+            console.log("version", j.expo.version, "versionCode", j.expo.android.versionCode);
+          '
+
       - name: Expo prebuild (generate native android project)
         run: npx expo prebuild --platform android --non-interactive
 
